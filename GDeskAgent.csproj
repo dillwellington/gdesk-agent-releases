@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe (não "Exe"): evita que o Windows abra uma janela de console
+         preta toda vez que o .exe é iniciado sem estar anexado a um
+         terminal, que era exatamente o que acontecia com a Tarefa Agendada
+         "GDesk Agente - Bandeja" (gatilho ONLOGON, ver
+         SelfInstaller.RegistrarTarefaBandeja): o usuário ligava a máquina
+         e via um cmd preto piscar/ficar aberto antes do ícone da bandeja
+         aparecer. Com o subsystem gráfico, isso some. Saída de
+         Console.WriteLine (opção "teste", mensagens de erro) continua
+         funcionando normalmente quando o .exe é chamado a partir de um
+         terminal já aberto (PowerShell/cmd), só não abre um terminal novo
+         sozinho. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>GDeskAgent</AssemblyName>
+    <RootNamespace>GDeskAgent</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Necessário para a telinha de login (LoginForm.cs) exibida pela
+         opção "abrir chamado"; o restante do agente (sincronização, modo
+         de teste) continua rodando 100% em modo console/headless. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Publicado como um único .exe autocontido (não exige .NET instalado
+         na máquina de destino); ver instruções de publish no README.md -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Comprime o runtime embutido no .exe; sem isso, o publish dava
+         ~68 MB, acima do limite de 50 MB do plano gratuito do Supabase
+         Storage (onde o instalador fica hospedado para download). -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Ícone do .exe, aparece no arquivo em si (Explorer), no atalho do
+         Menu Iniciar (que herda o ícone do .exe automaticamente) e no
+         registro do Painel de Controle (ver SelfInstaller, DisplayIcon).
+         O ícone da bandeja (NotifyIcon) é carregado à parte a partir do
+         mesmo arquivo, ver BandejaContext.cs. -->
+    <ApplicationIcon>Assets\icone.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Sem appsettings.json distribuído junto do .exe de propósito: a
+       configuração (token da empresa) é digitada uma vez na tela de
+       instalação (SetupForm) e gravada pelo próprio agente em
+       %ProgramData%\GDeskAgent; ver Instalacao.cs e SelfInstaller.cs. -->
+
+</Project>
