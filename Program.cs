@@ -129,9 +129,32 @@ if (!Instalacao.JaInstalado)
     // aplicável, o cliente e a obrigatoriedade de patrimônio/lacre) já
     // vêm detectados a partir dos bytes do próprio binário, sem precisar
     // colar nada.
-    var configEmbutida = ConfiguracaoEmbutida.DetectarNoProprioBinario();
-    ApplicationConfiguration.Initialize();
-    Application.Run(new SetupForm(configEmbutida));
+    //
+    // TEMPORÁRIO -- envolto num try/catch amplo (+ handlers de exceção
+    // global logo abaixo) só pra investigar um caso em que o processo
+    // estava terminando em silêncio, sem MessageBox nem nada no console,
+    // antes mesmo da tela aparecer -- WinExe sem esse tipo de rede de
+    // segurança pode morrer sem deixar rastro nenhum. Depois de achar a
+    // causa, dá pra simplificar de volta.
+    // Sem isso, dependendo da configuração, o WinForms deixa a exceção
+    // matar o processo em vez de disparar o evento ThreadException.
+    Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+    Application.ThreadException += (_, e) =>
+        MessageBox.Show($"Erro na tela (ThreadException):\n\n{e.Exception}", "GDesk - erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        MessageBox.Show($"Erro fatal (UnhandledException):\n\n{e.ExceptionObject}", "GDesk - erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+    try
+    {
+        var configEmbutida = ConfiguracaoEmbutida.DetectarNoProprioBinario();
+        ApplicationConfiguration.Initialize();
+        Application.Run(new SetupForm(configEmbutida));
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"Erro ao abrir a tela de instalação:\n\n{ex}", "GDesk - erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        return 1;
+    }
     return 0;
 }
 
