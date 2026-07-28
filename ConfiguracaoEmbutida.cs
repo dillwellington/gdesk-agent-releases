@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -106,10 +105,19 @@ public sealed class ConfiguracaoEmbutida
     {
         try
         {
-            var caminho = Process.GetCurrentProcess().MainModule?.FileName;
+            // Environment.ProcessPath (.NET 6+) em vez de
+            // Process.GetCurrentProcess().MainModule?.FileName --
+            // MainModule é conhecido por lançar BadImageFormatException
+            // em apps publicados como single-file (0x8007000B): ele tenta
+            // inspecionar o módulo como um PE "normal" pra montar
+            // FileVersionInfo etc., e a estrutura de bundle do single-file
+            // não bate com o que ele espera. ProcessPath só devolve o
+            // caminho do executável que iniciou o processo, sem
+            // inspecionar nada -- não tem esse problema.
+            var caminho = Environment.ProcessPath;
             if (string.IsNullOrEmpty(caminho))
             {
-                UltimoDiagnostico = "MainModule.FileName veio vazio/nulo";
+                UltimoDiagnostico = "Environment.ProcessPath veio vazio/nulo";
                 return null;
             }
             if (!File.Exists(caminho))

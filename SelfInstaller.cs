@@ -52,7 +52,16 @@ public static class SelfInstaller
             throw new Exception(mensagemValidacao);
         }
 
-        var exeAtual = Process.GetCurrentProcess().MainModule!.FileName!;
+        // Environment.ProcessPath (.NET 6+), não
+        // Process.GetCurrentProcess().MainModule!.FileName! -- MainModule
+        // lança BadImageFormatException (0x8007000B) em apps publicados
+        // como single-file (ver ConfiguracaoEmbutida.cs, mesmo problema
+        // achado lá primeiro): ele tenta inspecionar o módulo como um PE
+        // "normal" pra montar FileVersionInfo etc., e a estrutura de
+        // bundle do single-file não bate com o que ele espera.
+        // ProcessPath só devolve o caminho do executável que iniciou o
+        // processo, sem inspecionar nada.
+        var exeAtual = Environment.ProcessPath!;
         var psi = new ProcessStartInfo
         {
             FileName = exeAtual,
@@ -117,7 +126,16 @@ public static class SelfInstaller
 
         Directory.CreateDirectory(Instalacao.Pasta);
 
-        var exeAtual = Process.GetCurrentProcess().MainModule!.FileName!;
+        // Environment.ProcessPath (.NET 6+), não
+        // Process.GetCurrentProcess().MainModule!.FileName! -- MainModule
+        // lança BadImageFormatException (0x8007000B) em apps publicados
+        // como single-file (ver ConfiguracaoEmbutida.cs, mesmo problema
+        // achado lá primeiro): ele tenta inspecionar o módulo como um PE
+        // "normal" pra montar FileVersionInfo etc., e a estrutura de
+        // bundle do single-file não bate com o que ele espera.
+        // ProcessPath só devolve o caminho do executável que iniciou o
+        // processo, sem inspecionar nada.
+        var exeAtual = Environment.ProcessPath!;
         if (!string.Equals(Path.GetFullPath(exeAtual), Path.GetFullPath(Instalacao.CaminhoExe), StringComparison.OrdinalIgnoreCase))
         {
             File.Copy(exeAtual, Instalacao.CaminhoExe, overwrite: true);
@@ -307,7 +325,16 @@ public static class SelfInstaller
     /// </summary>
     public static void SolicitarDesinstalacaoComElevacao()
     {
-        var exeAtual = Process.GetCurrentProcess().MainModule!.FileName!;
+        // Environment.ProcessPath (.NET 6+), não
+        // Process.GetCurrentProcess().MainModule!.FileName! -- MainModule
+        // lança BadImageFormatException (0x8007000B) em apps publicados
+        // como single-file (ver ConfiguracaoEmbutida.cs, mesmo problema
+        // achado lá primeiro): ele tenta inspecionar o módulo como um PE
+        // "normal" pra montar FileVersionInfo etc., e a estrutura de
+        // bundle do single-file não bate com o que ele espera.
+        // ProcessPath só devolve o caminho do executável que iniciou o
+        // processo, sem inspecionar nada.
+        var exeAtual = Environment.ProcessPath!;
         var psi = new ProcessStartInfo
         {
             FileName = exeAtual,
