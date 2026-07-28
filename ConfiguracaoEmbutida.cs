@@ -47,6 +47,25 @@ public sealed class ConfiguracaoEmbutida
 {
     private const string Marcador = "GDESKCFGv1:";
 
+    // Tamanho de Marcador EM CARACTERES, como uma constante inteira
+    // separada -- de propósito, em vez de escrever "Marcador.Length" onde
+    // for preciso. "Marcador.Length" (ou qualquer outro uso de Marcador
+    // como VALOR em tempo de execução, tipo passar ele pra um método)
+    // obriga o compilador a gravar um SEGUNDO literal "GDESKCFGv1:" solto
+    // em algum lugar do assembly, sem nenhum ponto de proteção depois --
+    // exatamente a causa raiz do bug de BadImageFormatException (ver o
+    // comentário grande em cima de PadraoBusca). Marcador só pode
+    // aparecer como VALOR dentro da concatenação de PlaceholderConfig
+    // (que o compilador dobra em tempo de compilação, sem emitir
+    // "GDESKCFGv1:" separado) -- em nenhum outro lugar.
+    private const int TamanhoMarcador = 11; // "GDESKCFGv1:".Length
+
+    // Quantos caracteres de preenchimento (depois do marcador) entram no
+    // PADRÃO DE BUSCA, só pra desambiguar -- ver o comentário grande logo
+    // abaixo, no porquê disso existir. Precisa bater exatamente com
+    // _TAMANHO_DISAMBIGUADOR em app/services/agente_download_service.py.
+    private const int TamanhoDisambiguador = 32;
+
     // Precisa bater exatamente com _TAMANHO_PAYLOAD em
     // app/services/agente_download_service.py no gdesk-backend.
     private const int TamanhoPayload = 512;
@@ -70,6 +89,30 @@ public sealed class ConfiguracaoEmbutida
     // DetectarNoProprioBinario() (e o backend, no download) procuram
     // depois. Nunca é lido de verdade em nenhum outro lugar.
     private static readonly int TamanhoPlaceholderConferido = PlaceholderConfig.Length;
+
+    // Padrão usado pra localizar o placeholder nos bytes do .exe: marcador
+    // + TamanhoDisambiguador pontos, tirado como SUBSTRING de
+    // PlaceholderConfig em tempo de execução (Substring não cria um novo
+    // literal gravado no assembly -- só recorta a string que já existe em
+    // memória). Isso é DE PROPÓSITO diferente de simplesmente usar
+    // "Marcador" sozinho como padrão de busca: se o código passasse
+    // "Marcador" direto pra algum método (ex.: Encoding.GetBytes(Marcador)),
+    // o compilador emitiria um SEGUNDO literal separado, só com os 11
+    // caracteres do marcador, gravado em ALGUM OUTRO lugar do assembly,
+    // SEM os TamanhoPayload pontos de proteção depois -- e como
+    // bytes.IndexOf devolve a PRIMEIRA ocorrência, dependendo da ordem em
+    // que o compilador grava as coisas, a busca podia achar esse literal
+    // curto em vez do placeholder de verdade, e tanto o backend (ao
+    // embutir a config) quanto o agente (ao ler) acabariam
+    // lendo/sobrescrevendo bytes que não tinham nada a ver com o
+    // placeholder -- código/metadados de verdade do programa, corrompendo
+    // o assembly (foi exatamente isso que aconteceu: o .exe publicado
+    // tinha "GDESKCFGv1:" em 3 lugares diferentes, e o backend estava
+    // sobrescrevendo um dos errados, gerando BadImageFormatException).
+    // Com pelo menos TamanhoDisambiguador pontos no padrão de busca, só o
+    // placeholder de verdade bate.
+    private static readonly byte[] PadraoBusca =
+        Encoding.Unicode.GetBytes(PlaceholderConfig.Substring(0, TamanhoMarcador + TamanhoDisambiguador));
 
     [JsonPropertyName("t")]
     public string? Token { get; set; }
@@ -128,18 +171,21 @@ public sealed class ConfiguracaoEmbutida
 
             var bytes = File.ReadAllBytes(caminho);
 
-            // UTF-16LE: é assim que o compilador grava literais de string
-            // na heap #US do assembly -- precisa procurar os bytes nesse
-            // formato, não em UTF-8/ASCII puro.
-            var marcadorBytes = Encoding.Unicode.GetBytes(Marcador);
-            var indice = IndexOfBytes(bytes, marcadorBytes);
+            // Busca pelo PadraoBusca (marcador + pontos de desambiguação),
+            // não só pelo marcador sozinho -- ver o comentário grande em
+            // cima de PadraoBusca pra entender por quê isso importa.
+            var indice = IndexOfBytes(bytes, PadraoBusca);
             if (indice < 0)
             {
                 UltimoDiagnostico = $"marcador NAO encontrado (arquivo {bytes.Length} bytes, caminho '{caminho}')";
                 return null;
             }
 
-            var inicioPayload = indice + marcadorBytes.Length;
+            // O payload começa logo depois do MARCADOR (não depois do
+            // PadraoBusca inteiro, que inclui pontos de desambiguação que
+            // também fazem parte do preenchimento). TamanhoMarcador * 2
+            // porque UTF-16LE usa 2 bytes por caractere.
+            var inicioPayload = indice + TamanhoMarcador * 2;
             var tamanhoBytesPayload = TamanhoPayload * 2; // UTF-16LE: 2 bytes por caractere
             if (inicioPayload + tamanhoBytesPayload > bytes.Length)
             {
