@@ -84,6 +84,15 @@ public sealed class ConfiguracaoEmbutida
     [JsonPropertyName("l")]
     public bool NumeroLacreObrigatorio { get; set; }
 
+    // TEMPORÁRIO -- diagnóstico de por que DetectarNoProprioBinario() caiu
+    // no fluxo manual, pra investigar um caso em que o marcador está
+    // confirmadamente presente no arquivo (conferido por fora, via
+    // PowerShell) mas a detecção em execução não achou nada. Mostrado na
+    // SetupForm (ver lá) só quando a detecção falha, texto pequeno e
+    // cinza -- não atrapalha o uso normal, é só pra tirar print e mandar.
+    // Remover depois que a causa for encontrada.
+    public static string UltimoDiagnostico { get; private set; } = "(não rodou ainda)";
+
     /// <summary>
     /// Lê os bytes do próprio .exe em execução, procura o marcador
     /// embutido e decodifica o que estiver gravado nos TamanhoPayload
@@ -98,7 +107,16 @@ public sealed class ConfiguracaoEmbutida
         try
         {
             var caminho = Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(caminho) || !File.Exists(caminho)) return null;
+            if (string.IsNullOrEmpty(caminho))
+            {
+                UltimoDiagnostico = "MainModule.FileName veio vazio/nulo";
+                return null;
+            }
+            if (!File.Exists(caminho))
+            {
+                UltimoDiagnostico = $"File.Exists=false pra '{caminho}'";
+                return null;
+            }
 
             var bytes = File.ReadAllBytes(caminho);
 
@@ -107,27 +125,67 @@ public sealed class ConfiguracaoEmbutida
             // formato, não em UTF-8/ASCII puro.
             var marcadorBytes = Encoding.Unicode.GetBytes(Marcador);
             var indice = IndexOfBytes(bytes, marcadorBytes);
-            if (indice < 0) return null;
+            if (indice < 0)
+            {
+                UltimoDiagnostico = $"marcador NAO encontrado (arquivo {bytes.Length} bytes, caminho '{caminho}')";
+                return null;
+            }
 
             var inicioPayload = indice + marcadorBytes.Length;
             var tamanhoBytesPayload = TamanhoPayload * 2; // UTF-16LE: 2 bytes por caractere
-            if (inicioPayload + tamanhoBytesPayload > bytes.Length) return null;
+            if (inicioPayload + tamanhoBytesPayload > bytes.Length)
+            {
+                UltimoDiagnostico = $"marcador achado no indice {indice}, mas nao cabe o payload (arquivo {bytes.Length} bytes)";
+                return null;
+            }
 
             var payloadTexto = Encoding.Unicode
                 .GetString(bytes, inicioPayload, tamanhoBytesPayload)
                 .TrimEnd('.');
-            if (string.IsNullOrWhiteSpace(payloadTexto)) return null; // placeholder intacto
+            if (string.IsNullOrWhiteSpace(payloadTexto))
+            {
+                UltimoDiagnostico = $"marcador achado no indice {indice}, payload vazio (so pontos -- placeholder intacto)";
+                return null;
+            }
 
-            var json = DecodificarBase64Url(payloadTexto);
-            var config = JsonSerializer.Deserialize<ConfiguracaoEmbutida>(json);
+            string json;
+            try
+            {
+                json = DecodificarBase64Url(payloadTexto);
+            }
+            catch (Exception exBase64)
+            {
+                UltimoDiagnostico = $"marcador achado no indice {indice}, payload='{payloadTexto}' (tamanho {payloadTexto.Length}), FALHOU decodificar base64: {exBase64.GetType().Name}: {exBase64.Message}";
+                return null;
+            }
 
-            return string.IsNullOrWhiteSpace(config?.Token) ? null : config;
+            ConfiguracaoEmbutida? config;
+            try
+            {
+                config = JsonSerializer.Deserialize<ConfiguracaoEmbutida>(json);
+            }
+            catch (Exception exJson)
+            {
+                UltimoDiagnostico = $"marcador achado no indice {indice}, base64 decodificado='{json}', FALHOU parsear JSON: {exJson.GetType().Name}: {exJson.Message}";
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(config?.Token))
+            {
+                UltimoDiagnostico = $"marcador achado no indice {indice}, JSON parseado mas token vazio: '{json}'";
+                return null;
+            }
+
+            UltimoDiagnostico = $"OK: marcador no indice {indice}, token detectado (tamanho {config.Token.Length})";
+            return config;
         }
-        catch
+        catch (Exception ex)
         {
-            // Arquivo bloqueado, base64 inválido, JSON malformado etc. --
-            // não é pra travar o agente por causa disso, só cai no fluxo
-            // manual de sempre.
+            // Arquivo bloqueado, etc. -- não é pra travar o agente por
+            // causa disso, só cai no fluxo manual de sempre. Mas grava o
+            // que aconteceu no diagnóstico, em vez de engolir em
+            // silêncio, pra dar pra investigar.
+            UltimoDiagnostico = $"EXCECAO: {ex.GetType().Name}: {ex.Message}";
             return null;
         }
     }

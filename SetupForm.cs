@@ -115,6 +115,23 @@ public sealed class SetupForm : Form
             };
             Controls.Add(rotuloAjuda);
             y += 38;
+
+            // TEMPORÁRIO -- diagnóstico de por que a detecção automática
+            // não achou nada (ver ConfiguracaoEmbutida.UltimoDiagnostico).
+            // Remover depois que a causa for encontrada.
+            var rotuloDiagnostico = new Label
+            {
+                Text = ConfiguracaoEmbutida.UltimoDiagnostico,
+                AutoSize = false,
+                Left = 20,
+                Top = y,
+                Width = 340,
+                Height = 60,
+                ForeColor = Color.Firebrick,
+                Font = new Font(Font.FontFamily, 7.5f),
+            };
+            Controls.Add(rotuloDiagnostico);
+            y += 64;
         }
 
         if (_configEmbutida?.PatrimonioObrigatorio == true)
