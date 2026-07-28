@@ -127,8 +127,9 @@ if (!Instalacao.JaInstalado)
     // Se o .exe foi baixado personalizado (Minha Empresa ou um Cliente
     // específico -- ver ConfiguracaoEmbutida.cs), o token (e, se
     // aplicável, o cliente e a obrigatoriedade de patrimônio/lacre) já
-    // vêm detectados a partir do nome do arquivo, sem precisar colar nada.
-    var configEmbutida = ConfiguracaoEmbutida.DetectarNoNomeDoArquivo();
+    // vêm detectados a partir dos bytes do próprio binário, sem precisar
+    // colar nada.
+    var configEmbutida = ConfiguracaoEmbutida.DetectarNoProprioBinario();
     ApplicationConfiguration.Initialize();
     Application.Run(new SetupForm(configEmbutida));
     return 0;

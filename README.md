@@ -21,7 +21,7 @@ passo a passo abaixo.
 - `Assets/icone.ico` — ícone do app (monograma "G" com as cores do GDesk), referenciado via `ApplicationIcon` no `.csproj`; aparece no `.exe`, no atalho do Menu Iniciar e no Painel de Controle
 - `Program.cs` — ponto de entrada e tratamento dos argumentos de linha de comando
 - `Instalacao.cs` — define onde o agente vive depois de instalado (`%ProgramData%\GDeskAgent`)
-- `ConfiguracaoEmbutida.cs` — decodifica o token/cliente/obrigatoriedade de patrimônio-lacre embutidos no NOME do `.exe` quando baixado via GDesk (ver seção 4b)
+- `ConfiguracaoEmbutida.cs` — decodifica o token/cliente/obrigatoriedade de patrimônio-lacre embutidos DIRETO NOS BYTES do `.exe` quando baixado via GDesk (ver seção 4b)
 - `SetupForm.cs` — telinha da primeira execução (token pré-preenchido quando detectado via `ConfiguracaoEmbutida`, senão pede pra colar; também pede etiqueta de patrimônio/número do lacre quando o cliente exige)
 - `SelfInstaller.cs` — faz a instalação de verdade: copia o exe, grava a config, cria a Tarefa Agendada, o atalho e a entrada no Painel de Controle; também faz a desinstalação (seção 7)
 - `AgentConfig.cs` — leitura da configuração salva (`%ProgramData%\GDeskAgent\appsettings.json`)
@@ -160,20 +160,31 @@ mais úteis no download manual por cliente):
 
 Tanto o botão "Baixar agente para Windows" em **Minha Empresa** quanto o
 mesmo botão dentro do cadastro de um **Cliente** específico baixam
-exatamente o mesmo `GDeskAgent.exe` de sempre — a diferença é só o NOME
-do arquivo: o backend embute o token da empresa (e, no caso do Cliente,
-também o id dele e se etiqueta de patrimônio/número do lacre são
-obrigatórios ali) em base64url logo depois de `GDeskAgent__` no nome do
-arquivo baixado (ver `app/services/agente_download_service.py` no
-gdesk-backend). Nada disso altera o `.exe` em si nem exige recompilar ou
-publicar uma versão por empresa/cliente.
+sempre um arquivo chamado `GDeskAgent.exe` — limpo, sem nada estranho no
+nome. O que muda a cada download são alguns BYTES dentro do próprio
+binário: o backend localiza um trecho reservado (marcador
+`GDESKCFGv1:` + 512 caracteres de preenchimento, ver
+`ConfiguracaoEmbutida.cs`) e sobrescreve esse trecho com o token da
+empresa em base64url (e, no caso do Cliente, também o id dele e se
+etiqueta de patrimônio/número do lacre são obrigatórios ali) — sem mudar
+o tamanho do arquivo nem exigir recompilar ou publicar uma versão por
+empresa/cliente (ver `app/services/agente_download_service.py` no
+gdesk-backend).
 
-Na primeira execução, `ConfiguracaoEmbutida.DetectarNoNomeDoArquivo()`
-lê esse nome, decodifica e usa pra pular a telinha de colar o token (ver
-`SetupForm.cs`). Se a pessoa renomear o arquivo antes de rodar (ou copiar
-um `.exe` genérico de outro lugar), o agente simplesmente não encontra
-esse prefixo e cai no fluxo antigo — pede o token na tela, sem erro
-nenhum.
+Importante: isso só funciona com `EnableCompressionInSingleFile` DESLIGADO
+no `.csproj` (compressão ligada transformaria os bytes do assembly num
+blob comprimido, e a busca pelo marcador não encontraria mais nada).
+
+Na primeira execução, `ConfiguracaoEmbutida.DetectarNoProprioBinario()`
+lê os bytes do próprio `.exe`, procura o marcador e decodifica o que
+estiver gravado ali, usando isso pra pular a telinha de colar o token
+(ver `SetupForm.cs`). Se ninguém sobrescreveu esse trecho (build local
+direto, ou alguém pegou o `.exe` "cru" da release do GitHub sem passar
+pela tela do GDesk), ele continua só com pontos — o agente reconhece
+isso e cai no fluxo antigo, pede o token na tela, sem erro nenhum. Como
+a config mora nos bytes e não no nome, renomear o arquivo antes de rodar
+não quebra nada (diferença em relação à primeira versão desse
+mecanismo).
 
 Baixado a partir de um Cliente que marcou "Exigir etiqueta de
 patrimônio" e/ou "Exigir número do lacre" (ver cadastro do Cliente no
@@ -240,26 +251,26 @@ primeira vez.
 ## 7. Publicando o instalador para download dentro do próprio GDesk
 
 A tela **Minha Empresa** (e a de cada **Cliente**, ver seção 4b) do GDesk
-tem um botão "Baixar agente para Windows" que serve sempre o mesmo
-binário `GDeskAgent.exe` pro admin — não precisa gerar/publicar nada por
-empresa ou cliente. O que muda a cada download é só o NOME do arquivo
-(token, e no caso do Cliente também o id dele e a obrigatoriedade de
-patrimônio/lacre, embutidos ali — ver seção 4b), não o conteúdo do
-binário. O asset publicado no GitHub (abaixo) continua precisando se
-chamar exatamente `GDeskAgent.exe`, sem relação com o nome que o
-navegador do admin efetivamente baixa.
+tem um botão "Baixar agente para Windows" que sempre entrega um arquivo
+chamado `GDeskAgent.exe` pro admin — não precisa gerar/publicar nada por
+empresa ou cliente. O que muda a cada download são só alguns BYTES
+internos (token, e no caso do Cliente também o id dele e a
+obrigatoriedade de patrimônio/lacre, embutidos ali — ver seção 4b), não
+o binário publicado em si nem o nome do arquivo. O asset publicado no
+GitHub (abaixo) continua precisando se chamar exatamente
+`GDeskAgent.exe`.
 
 O `.exe` fica hospedado como asset de uma **release do GitHub**, num
 repositório dedicado só a isso —
 [`dillwellington/gdesk-agent-releases`](https://github.com/dillwellington/gdesk-agent-releases)
 — em vez do Supabase Storage (o binário self-contained do agente passa
-dos 50 MB do plano gratuito do Supabase, mesmo com
-`EnableCompressionInSingleFile` habilitado no `.csproj` — WinForms puxa
-bastante coisa do runtime) e em vez do próprio repositório `gdesk-backend`
-(esse é **privado**, e o link direto de download de release do GitHub só
-funciona em repositórios **públicos** — por isso o repositório separado:
-ele só guarda o `.exe` compilado, nada de código-fonte nem segredo, então
-não tem problema ser público).
+fácil dos 50 MB do plano gratuito do Supabase — ainda mais agora, com
+`EnableCompressionInSingleFile` DESLIGADO no `.csproj`, ver seção 4b) e
+em vez do próprio repositório `gdesk-backend` (esse é **privado**, e o
+link direto de download de release do GitHub só funciona em
+repositórios **públicos** — por isso o repositório separado: ele guarda
+tanto o código-fonte quanto o `.exe` compilado, nada de segredo em
+nenhum dos dois, então não tem problema ser público).
 
 Para publicar (ou atualizar) o instalador:
 

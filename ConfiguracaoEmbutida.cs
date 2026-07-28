@@ -6,29 +6,71 @@ using System.Text.Json.Serialization;
 namespace GDeskAgent;
 
 /// <summary>
-/// Configuração opcional embutida no NOME do .exe pelo backend, quando
-/// baixado a partir de GET /empresas/minha/agente/baixar ou
-/// GET /clientes/{id}/agente/baixar (ver
+/// Configuração opcional embutida DIRETO NOS BYTES do próprio .exe pelo
+/// backend, quando baixado a partir de GET /empresas/minha/agente/baixar
+/// ou GET /clientes/{id}/agente/baixar (ver
 /// app/services/agente_download_service.py no repositório gdesk-backend).
-/// O arquivo vem nomeado "GDeskAgent__&lt;base64url&gt;.exe" -- o trecho
-/// depois de "GDeskAgent__" é um JSON compacto (chaves curtas de
-/// propósito: "t"=token da empresa, "c"=id do cliente, "p"/"l"=
-/// obrigatoriedade de etiqueta de patrimônio/número do lacre nesse
-/// cliente) codificado em base64url sem padding.
 ///
-/// Isso deixa o .exe continuar sendo um binário único e genérico (o
-/// mesmo de sempre, publicado na release do GitHub) -- só o NOME do
-/// arquivo muda a cada download, então não precisa recompilar nem
-/// modificar o executável por empresa/cliente.
+/// Por quê nos bytes, e não no nome do arquivo (como na primeira versão
+/// disso): o nome do arquivo baixado aparecia feio na tela "Salvar como"
+/// do navegador (um base64 longo colado no nome) -- agora o download
+/// sempre se chama só "GDeskAgent.exe", limpo, e quem carrega o
+/// token/cliente é um trecho fixo dentro do próprio binário.
 ///
-/// Se o arquivo for renomeado antes de rodar (ou copiado de algum lugar
-/// só com o nome genérico "GDeskAgent.exe"), DetectarNoNomeDoArquivo
-/// simplesmente retorna null -- degradação graciosa pro fluxo antigo
-/// (SetupForm pede o token colado à mão), nunca lança exceção.
+/// Como funciona: o literal PlaceholderConfig logo abaixo (marcador
+/// "GDESKCFGv1:" + TamanhoPayload caracteres de preenchimento) fica
+/// gravado, palavra por palavra, dentro do assembly publicado -- todo
+/// literal de string do C# vira bytes UTF-16LE fixos na heap de strings
+/// do assembly (heap "#US" do formato de metadados do .NET), então esse
+/// texto aparece sempre com esse conteúdo exato no .exe final, contanto
+/// que EnableCompressionInSingleFile continue DESLIGADO no .csproj (com
+/// compressão ligada, os bytes do assembly principal viram um blob
+/// comprimido, e essa busca por texto não encontra mais nada -- por isso
+/// foi desligada de propósito lá, ver o comentário no .csproj).
+///
+/// O backend localiza esse marcador nos bytes do .exe (procurando o
+/// texto "GDESKCFGv1:" codificado em UTF-16LE, do mesmo jeito que o
+/// compilador grava) e sobrescreve só os TamanhoPayload caracteres
+/// seguintes com o token/cliente reais em base64url, preenchidos com "."
+/// até bater o tamanho fixo -- sem mudar o tamanho do arquivo em nenhum
+/// byte, então nada mais no .exe (a estrutura do bundle single-file, o
+/// manifest no fim do arquivo etc.) precisa se mexer.
+///
+/// Vantagem sobre a versão por nome de arquivo: sobrevive a renomear o
+/// .exe antes de rodar. Se ninguém sobrescrever os bytes (build local
+/// direto pelo `dotnet publish`, ou alguém pega o .exe "cru" da release
+/// do GitHub sem passar pela tela do GDesk), o trecho continua só com
+/// pontos -- DetectarNoProprioBinario() reconhece isso e cai no fluxo
+/// manual de sempre (SetupForm pede o token colado à mão), nunca lança
+/// exceção nem trava a instalação.
 /// </summary>
 public sealed class ConfiguracaoEmbutida
 {
-    private const string Prefixo = "GDeskAgent__";
+    private const string Marcador = "GDESKCFGv1:";
+
+    // Precisa bater exatamente com _TAMANHO_PAYLOAD em
+    // app/services/agente_download_service.py no gdesk-backend.
+    private const int TamanhoPayload = 512;
+
+    // ATENÇÃO: a sequência de pontos abaixo não é decorativa -- são
+    // exatamente TamanhoPayload (512) caracteres de preenchimento,
+    // gerados programaticamente. Se algum dia precisar mudar
+    // TamanhoPayload, gere a string de novo (ex.: no Python,
+    // "." * 512) em vez de editar os pontos manualmente -- uma contagem
+    // errada aqui faz DetectarNoProprioBinario() nunca mais achar o
+    // marcador direito.
+    private const string PlaceholderConfig = Marcador + "................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................";
+
+    // Só existe pra FORÇAR o compilador a gravar o literal PlaceholderConfig
+    // no assembly publicado. Um "const" nunca referenciado em lugar nenhum
+    // do código pode não virar bytes físicos no assembly -- lendo
+    // ".Length" aqui (não é uma expressão constante em C#, mesmo com uma
+    // string const do lado esquerdo) obriga o compilador a emitir
+    // "ldstr" pro literal inteiro, que é exatamente o que grava os bytes
+    // UTF-16LE na heap #US do assembly -- os mesmos bytes que
+    // DetectarNoProprioBinario() (e o backend, no download) procuram
+    // depois. Nunca é lido de verdade em nenhum outro lugar.
+    private static readonly int TamanhoPlaceholderConferido = PlaceholderConfig.Length;
 
     [JsonPropertyName("t")]
     public string? Token { get; set; }
@@ -43,35 +85,71 @@ public sealed class ConfiguracaoEmbutida
     public bool NumeroLacreObrigatorio { get; set; }
 
     /// <summary>
-    /// Olha o nome do próprio .exe em execução (só o nome do arquivo, não
-    /// a pasta) em busca do prefixo "GDeskAgent__" e decodifica o que vier
-    /// depois. Retorna null (nunca lança) se o nome não tiver o prefixo,
-    /// o base64 for inválido, o JSON for inválido, ou não tiver um token
-    /// utilizável -- em qualquer um desses casos, quem chamou deve seguir
-    /// o fluxo antigo (pedir o token na tela).
+    /// Lê os bytes do próprio .exe em execução, procura o marcador
+    /// embutido e decodifica o que estiver gravado nos TamanhoPayload
+    /// caracteres seguintes. Retorna null (nunca lança) se o marcador não
+    /// for encontrado, o trecho ainda estiver só com pontos (placeholder
+    /// intacto), o base64 for inválido, o JSON for inválido, ou não tiver
+    /// um token utilizável -- em qualquer um desses casos, quem chamou
+    /// deve seguir o fluxo antigo (pedir o token na tela).
     /// </summary>
-    public static ConfiguracaoEmbutida? DetectarNoNomeDoArquivo()
+    public static ConfiguracaoEmbutida? DetectarNoProprioBinario()
     {
         try
         {
             var caminho = Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(caminho)) return null;
+            if (string.IsNullOrEmpty(caminho) || !File.Exists(caminho)) return null;
 
-            var nome = Path.GetFileNameWithoutExtension(caminho);
-            if (!nome.StartsWith(Prefixo, StringComparison.Ordinal)) return null;
+            var bytes = File.ReadAllBytes(caminho);
 
-            var codificado = nome.Substring(Prefixo.Length);
-            var json = DecodificarBase64Url(codificado);
+            // UTF-16LE: é assim que o compilador grava literais de string
+            // na heap #US do assembly -- precisa procurar os bytes nesse
+            // formato, não em UTF-8/ASCII puro.
+            var marcadorBytes = Encoding.Unicode.GetBytes(Marcador);
+            var indice = IndexOfBytes(bytes, marcadorBytes);
+            if (indice < 0) return null;
+
+            var inicioPayload = indice + marcadorBytes.Length;
+            var tamanhoBytesPayload = TamanhoPayload * 2; // UTF-16LE: 2 bytes por caractere
+            if (inicioPayload + tamanhoBytesPayload > bytes.Length) return null;
+
+            var payloadTexto = Encoding.Unicode
+                .GetString(bytes, inicioPayload, tamanhoBytesPayload)
+                .TrimEnd('.');
+            if (string.IsNullOrWhiteSpace(payloadTexto)) return null; // placeholder intacto
+
+            var json = DecodificarBase64Url(payloadTexto);
             var config = JsonSerializer.Deserialize<ConfiguracaoEmbutida>(json);
 
             return string.IsNullOrWhiteSpace(config?.Token) ? null : config;
         }
         catch
         {
-            // Base64 inválido, JSON malformado etc. -- não é pra travar o
-            // agente por causa disso, só cai no fluxo manual de sempre.
+            // Arquivo bloqueado, base64 inválido, JSON malformado etc. --
+            // não é pra travar o agente por causa disso, só cai no fluxo
+            // manual de sempre.
             return null;
         }
+    }
+
+    private static int IndexOfBytes(byte[] haystack, byte[] needle)
+    {
+        if (needle.Length == 0 || haystack.Length < needle.Length) return -1;
+
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            var igual = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] != needle[j])
+                {
+                    igual = false;
+                    break;
+                }
+            }
+            if (igual) return i;
+        }
+        return -1;
     }
 
     /// <summary>

@@ -29,10 +29,16 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <!-- Comprime o runtime embutido no .exe; sem isso, o publish dava
-         ~68 MB, acima do limite de 50 MB do plano gratuito do Supabase
-         Storage (onde o instalador fica hospedado para download). -->
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- DESLIGADO de propósito (era true quando o instalador ainda
+         morava no Supabase Storage, plano gratuito com limite de 50 MB).
+         Hoje o .exe fica hospedado como asset de release no GitHub (ver
+         README.md, seção 7), sem esse limite de tamanho -- e com
+         compressão ligada, os bytes do assembly principal ficam dentro de
+         um blob comprimido, o que quebraria a busca por texto que
+         ConfiguracaoEmbutida.DetectarNoProprioBinario() faz direto nos
+         bytes do .exe publicado (ver esse arquivo e
+         app/services/agente_download_service.py no gdesk-backend). -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <!-- Ícone do .exe, aparece no arquivo em si (Explorer), no atalho do
          Menu Iniciar (que herda o ícone do .exe automaticamente) e no
          registro do Painel de Controle (ver SelfInstaller, DisplayIcon).
