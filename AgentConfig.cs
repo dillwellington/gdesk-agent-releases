@@ -24,6 +24,15 @@ public sealed class AgentConfig
     public string? Patrimonio { get; set; }
     public string? NumeroLacre { get; set; }
 
+    // Escolhido uma única vez na tela de instalação (SetupForm, a partir
+    // da lista de GET /agente/estado) -- gravado aqui pra ir em toda
+    // sincronização daí em diante (ver ColetarComConfig), mas o backend só
+    // grava isso na criação do Recurso; depois disso é só leitura por
+    // aqui. Pra saber o valor ATUAL (que pode ter mudado pelo sistema
+    // depois da instalação), o PainelForm busca em /agente/estado, não lê
+    // este campo.
+    public string? SetorId { get; set; }
+
     public static AgentConfig Carregar()
     {
         if (!File.Exists(Instalacao.CaminhoConfig))

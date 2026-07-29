@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -8,8 +10,9 @@ namespace GDeskAgent;
 /// Tela mostrada na primeira vez que o GDeskAgent.exe roda nesta máquina
 /// (nenhum appsettings.json ainda em %ProgramData%\GDeskAgent -- ver
 /// Instalacao.JaInstalado). Faz o resto sozinha: copia o .exe para
-/// %ProgramData%\GDeskAgent, cria a Tarefa Agendada de sincronização e o
-/// atalho "Abrir Chamado GDesk" no Menu Iniciar (ver SelfInstaller).
+/// %ProgramData%\GDeskAgent, cria a Tarefa Agendada de sincronização e os
+/// atalhos "GDesk Agente" no Menu Iniciar e na Área de Trabalho (ver
+/// SelfInstaller).
 ///
 /// Quando o .exe foi baixado a partir de Minha Empresa ou de um Cliente
 /// específico (ver ConfiguracaoEmbutida.cs), o token já vem pré-
@@ -19,16 +22,37 @@ namespace GDeskAgent;
 /// botão Instalar. Sem configuração embutida (.exe genérico, ou renomeado
 /// antes de rodar), a tela cai no fluxo antigo: só pede o token colado à
 /// mão.
+///
+/// Setor/Subsetor (obrigatórios, ver ComboSetor_SelectedIndexChanged e
+/// CarregarSetoresAsync) são buscados em GET /agente/estado assim que o
+/// token é conhecido (imediatamente se detectado; ao sair do campo, se
+/// digitado à mão) -- essa é a ÚNICA vez que a pessoa escolhe o setor: o
+/// backend só grava isso na criação do Recurso (ver
+/// app/routers/agente.py::sincronizar), depois só o sistema pode mudar.
 /// </summary>
 public sealed class SetupForm : Form
 {
     private readonly ConfiguracaoEmbutida? _configEmbutida;
 
     private readonly TextBox _campoToken = new() { PlaceholderText = "Cole aqui o token da empresa" };
+    private readonly ComboBox _comboSetor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+    private readonly ComboBox _comboSubsetor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+    private readonly Label _rotuloStatusSetor = new() { AutoSize = false, ForeColor = Color.Gray, Font = new Font(FontFamily.GenericSansSerif, 8.25f) };
     private readonly TextBox _campoPatrimonio = new() { PlaceholderText = "Ex.: PAT-00123" };
     private readonly TextBox _campoNumeroLacre = new() { PlaceholderText = "Ex.: LAC-45678" };
     private readonly Button _botaoInstalar = new() { Text = "Instalar" };
     private readonly Label _rotuloErro = new() { ForeColor = Color.Firebrick, AutoSize = false };
+
+    private List<SetorAgenteItem> _setores = new();
+
+    /// <summary>Item de combo simples (id + nome de exibição) reaproveitado nos dois combos de setor.</summary>
+    private sealed class ItemCombo
+    {
+        public string Id { get; }
+        public string Nome { get; }
+        public ItemCombo(string id, string nome) { Id = id; Nome = nome; }
+        public override string ToString() => Nome;
+    }
 
     public SetupForm(ConfiguracaoEmbutida? configEmbutida = null)
     {
@@ -134,6 +158,35 @@ public sealed class SetupForm : Form
             y += 64;
         }
 
+        var rotuloSetor = new Label { Text = "Setor *", AutoSize = true, Left = 20, Top = y };
+        Controls.Add(rotuloSetor);
+        y += 22;
+
+        _comboSetor.Left = 20;
+        _comboSetor.Top = y;
+        _comboSetor.Width = 340;
+        _comboSetor.SelectedIndexChanged += ComboSetor_SelectedIndexChanged;
+        Controls.Add(_comboSetor);
+        y += 32;
+
+        var rotuloSubsetor = new Label { Text = "Subsetor", AutoSize = true, Left = 20, Top = y };
+        Controls.Add(rotuloSubsetor);
+        y += 22;
+
+        _comboSubsetor.Left = 20;
+        _comboSubsetor.Top = y;
+        _comboSubsetor.Width = 340;
+        Controls.Add(_comboSubsetor);
+        y += 30;
+
+        _rotuloStatusSetor.Left = 20;
+        _rotuloStatusSetor.Top = y;
+        _rotuloStatusSetor.Width = 340;
+        _rotuloStatusSetor.Height = 18;
+        _rotuloStatusSetor.Text = "Carregando setores...";
+        Controls.Add(_rotuloStatusSetor);
+        y += 24;
+
         if (_configEmbutida?.PatrimonioObrigatorio == true)
         {
             var rotuloPatrimonio = new Label { Text = "Etiqueta de patrimônio *", AutoSize = true, Left = 20, Top = y };
@@ -184,6 +237,90 @@ public sealed class SetupForm : Form
         // primeira execução numa máquina Windows de verdade e ajustar se
         // sobrar/faltar espaço.
         Height = y + 54;
+
+        // Carrega os setores assim que o token for conhecido: na hora (se
+        // já veio detectado no arquivo baixado) ou quando a pessoa termina
+        // de colar o token à mão (evento Leave do campo).
+        if (tokenDetectado)
+        {
+            Load += async (_, _) => await CarregarSetoresAsync(_configEmbutida!.Token!);
+        }
+        else
+        {
+            _rotuloStatusSetor.Text = "Cole o token acima para carregar os setores.";
+            _campoToken.Leave += async (_, _) => await CarregarSetoresAsync(_campoToken.Text.Trim());
+        }
+    }
+
+    /// <summary>
+    /// Busca GET /agente/estado com o token informado e popula o combo de
+    /// Setor (só os de nível principal -- setor_pai_id nulo). O combo de
+    /// Subsetor é populado depois, em ComboSetor_SelectedIndexChanged,
+    /// conforme o setor escolhido. Se a empresa não tiver nenhum setor
+    /// cadastrado, não bloqueia a instalação (não tem o que escolher).
+    /// </summary>
+    private async Task CarregarSetoresAsync(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return;
+
+        _rotuloStatusSetor.ForeColor = Color.Gray;
+        _rotuloStatusSetor.Text = "Carregando setores...";
+        _comboSetor.Enabled = false;
+        _comboSubsetor.Enabled = false;
+
+        var (sucesso, estado, mensagem) = await new ApiClient(new AgentConfig { AgentToken = token }).ObterEstadoAsync();
+
+        if (!sucesso || estado == null)
+        {
+            _rotuloStatusSetor.ForeColor = Color.Firebrick;
+            _rotuloStatusSetor.Text = $"Não foi possível carregar os setores ({mensagem}).";
+            return;
+        }
+
+        _setores = estado.Setores;
+        _comboSetor.Items.Clear();
+        _comboSubsetor.Items.Clear();
+
+        var setoresPrincipais = _setores
+            .Where(s => string.IsNullOrEmpty(s.SetorPaiId))
+            .OrderBy(s => s.Nome)
+            .Select(s => new ItemCombo(s.Id, s.Nome))
+            .ToList();
+
+        if (setoresPrincipais.Count == 0)
+        {
+            _rotuloStatusSetor.ForeColor = Color.Gray;
+            _rotuloStatusSetor.Text = "Nenhum setor cadastrado nesta empresa -- pode prosseguir sem selecionar.";
+            return;
+        }
+
+        foreach (var item in setoresPrincipais) _comboSetor.Items.Add(item);
+        _comboSetor.Enabled = true;
+        _rotuloStatusSetor.Text = "";
+    }
+
+    /// <summary>
+    /// Repopula o combo de Subsetor com os filhos (setor_pai_id == setor
+    /// escolhido) do Setor selecionado -- fica desabilitado (e não
+    /// obrigatório) se o setor escolhido não tiver nenhum subsetor.
+    /// </summary>
+    private void ComboSetor_SelectedIndexChanged(object? remetente, EventArgs evento)
+    {
+        _comboSubsetor.Items.Clear();
+        _comboSubsetor.Enabled = false;
+
+        if (_comboSetor.SelectedItem is not ItemCombo setorSelecionado) return;
+
+        var filhos = _setores
+            .Where(s => s.SetorPaiId == setorSelecionado.Id)
+            .OrderBy(s => s.Nome)
+            .Select(s => new ItemCombo(s.Id, s.Nome))
+            .ToList();
+
+        if (filhos.Count == 0) return;
+
+        foreach (var item in filhos) _comboSubsetor.Items.Add(item);
+        _comboSubsetor.Enabled = true;
     }
 
     private async void BotaoInstalar_Click(object? remetente, EventArgs evento)
@@ -212,6 +349,33 @@ public sealed class SetupForm : Form
             return;
         }
 
+        // Setor obrigatório só quando o combo está habilitado (ou seja,
+        // a empresa tem pelo menos um setor cadastrado -- ver
+        // CarregarSetoresAsync). Subsetor só é obrigatório quando o Setor
+        // escolhido tiver filhos (ver ComboSetor_SelectedIndexChanged).
+        // O valor final gravado é sempre o mais específico: o subsetor,
+        // se houver um escolhido, senão o próprio setor.
+        string? setorId = null;
+        if (_comboSetor.Enabled)
+        {
+            if (_comboSetor.SelectedItem is not ItemCombo setorEscolhido)
+            {
+                _rotuloErro.Text = "Selecione o Setor antes de continuar.";
+                return;
+            }
+            setorId = setorEscolhido.Id;
+
+            if (_comboSubsetor.Enabled)
+            {
+                if (_comboSubsetor.SelectedItem is not ItemCombo subsetorEscolhido)
+                {
+                    _rotuloErro.Text = "Selecione o Subsetor antes de continuar.";
+                    return;
+                }
+                setorId = subsetorEscolhido.Id;
+            }
+        }
+
         _botaoInstalar.Enabled = false;
         _botaoInstalar.Text = "Instalando...";
         _rotuloErro.ForeColor = Color.Gray;
@@ -229,9 +393,10 @@ public sealed class SetupForm : Form
                 token,
                 _configEmbutida?.ClienteId,
                 string.IsNullOrWhiteSpace(patrimonio) ? null : patrimonio,
-                string.IsNullOrWhiteSpace(numeroLacre) ? null : numeroLacre));
+                string.IsNullOrWhiteSpace(numeroLacre) ? null : numeroLacre,
+                setorId));
             MessageBox.Show(
-                "Agente GDesk instalado com sucesso!\n\nProcure \"Abrir Chamado GDesk\" no Menu Iniciar sempre que precisar registrar um chamado.",
+                "Agente GDesk instalado com sucesso!\n\nProcure \"GDesk Agente\" no Menu Iniciar ou na Área de Trabalho sempre que precisar abrir o painel (abrir chamado, ver o setor).",
                 "GDesk",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);

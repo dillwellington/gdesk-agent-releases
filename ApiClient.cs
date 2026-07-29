@@ -58,6 +58,43 @@ public sealed class ApiClient
     }
 
     /// <summary>
+    /// Busca a lista de setores/subsetores da empresa e, se
+    /// identificadorAgente for informado e já existir um Recurso pra essa
+    /// máquina, o setor_id atual dele -- usado pelo SetupForm (montar os
+    /// combos na instalação, sem identificadorAgente ainda faz sentido:
+    /// o recurso pode nem existir de verdade) e pelo PainelForm (mostrar
+    /// o setor atual, buscado sempre do servidor -- pode ter mudado pelo
+    /// sistema depois da instalação, então não dá pra confiar num valor
+    /// salvo localmente).
+    /// </summary>
+    public async Task<(bool sucesso, EstadoAgenteResposta? estado, string mensagem)> ObterEstadoAsync(string? identificadorAgente = null)
+    {
+        try
+        {
+            // Ver comentário em SincronizarAsync sobre ConfigureAwait(false).
+            var caminho = "agente/estado";
+            if (!string.IsNullOrWhiteSpace(identificadorAgente))
+            {
+                caminho += $"?identificador_agente={Uri.EscapeDataString(identificadorAgente)}";
+            }
+            var resposta = await _http.GetAsync(caminho).ConfigureAwait(false);
+            var corpo = await resposta.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            if (resposta.IsSuccessStatusCode)
+            {
+                var estado = JsonSerializer.Deserialize<EstadoAgenteResposta>(corpo, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return (true, estado, corpo);
+            }
+
+            return (false, null, ExtrairDetalhe(corpo) ?? $"HTTP {(int)resposta.StatusCode}: {corpo}");
+        }
+        catch (Exception ex)
+        {
+            return (false, null, $"Falha de conexão: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Confirma junto do backend se o token é válido para alguma empresa,
     /// sem gravar nada -- chamado pelo instalador antes de configurar a
     /// máquina (ver SelfInstaller.InstalarComElevacao/ExecutarInstalacaoElevada).

@@ -54,6 +54,7 @@ public static class InventoryCollector
     {
         var payload = Coletar();
         if (!string.IsNullOrWhiteSpace(config.ClienteId)) payload.ClienteId = config.ClienteId;
+        if (!string.IsNullOrWhiteSpace(config.SetorId)) payload.SetorId = config.SetorId;
         if (!string.IsNullOrWhiteSpace(config.Patrimonio)) payload.Patrimonio = config.Patrimonio;
         if (!string.IsNullOrWhiteSpace(config.NumeroLacre)) payload.NumeroLacre = config.NumeroLacre;
         return payload;
@@ -68,7 +69,12 @@ public static class InventoryCollector
         }
     }
 
-    private static string ObterMachineGuid()
+    /// <summary>
+    /// Público pra ser reaproveitado fora da coleta completa (ver
+    /// PainelForm.cs e ApiClient.ObterEstadoAsync -- só precisam do
+    /// identificador da máquina, não do inventário inteiro).
+    /// </summary>
+    public static string ObterMachineGuid()
     {
         try
         {

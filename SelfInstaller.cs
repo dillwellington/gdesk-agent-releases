@@ -7,10 +7,11 @@ namespace GDeskAgent;
 
 /// <summary>
 /// Faz o GDeskAgent.exe se instalar sozinho na máquina: copia para
-/// %ProgramData%\GDeskAgent, grava o appsettings.json com o token colado
-/// pelo usuário (ver SetupForm), registra a Tarefa Agendada de
-/// sincronização periódica e cria o atalho "Abrir Chamado GDesk" no Menu
-/// Iniciar. Tudo isso exige administrador -- por isso o fluxo é sempre:
+/// %ProgramData%\GDeskAgent, grava o appsettings.json com o token (e
+/// Setor/Subsetor) colados pelo usuário (ver SetupForm), registra a
+/// Tarefa Agendada de sincronização periódica e cria os atalhos "GDesk
+/// Agente" no Menu Iniciar e na Área de Trabalho (abrem o Painel -- ver
+/// CriarAtalho/PainelForm.cs). Tudo isso exige administrador -- por isso o fluxo é sempre:
 /// clique do usuário (sem privilégio) -> relança a si mesmo elevado (UAC)
 /// -> instância elevada faz o trabalho de verdade. A desinstalação
 /// (ExecutarDesinstalacaoElevada) segue exatamente o mesmo padrão de
@@ -39,7 +40,7 @@ public static class SelfInstaller
     /// Cliente.agente_patrimonio_obrigatorio/agente_numero_lacre_obrigatorio
     /// exigem isso.
     /// </summary>
-    public static void InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null)
+    public static void InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
     {
         // Valida o token ANTES de pedir elevação de administrador: evita
         // incomodar o usuário com a janela do UAC quando o token já está
@@ -65,7 +66,7 @@ public static class SelfInstaller
         var psi = new ProcessStartInfo
         {
             FileName = exeAtual,
-            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre),
+            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre, setorId),
             UseShellExecute = true,
             Verb = "runas",
         };
@@ -90,17 +91,18 @@ public static class SelfInstaller
 
     /// <summary>
     /// Monta os argumentos de linha de comando de "--instalar-elevado",
-    /// incluindo os opcionais "--cliente-id", "--patrimonio" e
-    /// "--numero-lacre" só quando fornecidos -- ver Program.cs pro parser
-    /// correspondente. Cada valor vai entre aspas (podem ter espaço,
-    /// ex.: "Sala 3 - Recepção").
+    /// incluindo os opcionais "--cliente-id", "--patrimonio",
+    /// "--numero-lacre" e "--setor-id" só quando fornecidos -- ver
+    /// Program.cs pro parser correspondente. Cada valor vai entre aspas
+    /// (podem ter espaço, ex.: "Sala 3 - Recepção").
     /// </summary>
-    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre)
+    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre, string? setorId)
     {
         var argumentos = $"--instalar-elevado \"{token}\"";
         if (!string.IsNullOrWhiteSpace(clienteId)) argumentos += $" --cliente-id \"{clienteId}\"";
         if (!string.IsNullOrWhiteSpace(patrimonio)) argumentos += $" --patrimonio \"{patrimonio}\"";
         if (!string.IsNullOrWhiteSpace(numeroLacre)) argumentos += $" --numero-lacre \"{numeroLacre}\"";
+        if (!string.IsNullOrWhiteSpace(setorId)) argumentos += $" --setor-id \"{setorId}\"";
         return argumentos;
     }
 
@@ -110,7 +112,7 @@ public static class SelfInstaller
     /// SYSTEM): faz a instalação de verdade. Seguro de rodar mais de uma
     /// vez -- sempre sobrescreve o que já existia.
     /// </summary>
-    public static void ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null)
+    public static void ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
     {
         // Revalida aqui também (mesma checagem de InstalarComElevacao):
         // esta função também é chamada diretamente, sem passar pela tela
@@ -151,6 +153,7 @@ public static class SelfInstaller
                 ClienteId = clienteId,
                 Patrimonio = patrimonio,
                 NumeroLacre = numeroLacre,
+                SetorId = setorId,
             },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(Instalacao.CaminhoConfig, configJson);
@@ -158,6 +161,7 @@ public static class SelfInstaller
         RegistrarTarefaAgendada();
         RegistrarTarefaBandeja();
         CriarAtalhoMenuIniciar();
+        CriarAtalhoAreaTrabalho();
         RegistrarNoPainelDeControle();
         SincronizarAgora();
         IniciarBandejaAgora();
@@ -253,18 +257,43 @@ public static class SelfInstaller
         }
     }
 
+    private const string NomeAtalho = "GDesk Agente.lnk";
+
+    /// <summary>
+    /// Atalho no Menu Iniciar apontando pro Painel (--painel: mostra Setor/
+    /// Subsetor e o botão "Abrir chamado" -- ver PainelForm.cs), não mais
+    /// direto pro navegador -- assim a pessoa acha um jeito só de abrir
+    /// chamado ou conferir o setor, em vez de dois atalhos parecidos.
+    /// </summary>
     private static void CriarAtalhoMenuIniciar()
     {
         var pastaMenuIniciar = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");
-        var caminhoAtalho = Path.Combine(pastaMenuIniciar, "Abrir Chamado GDesk.lnk");
+        CriarAtalho(Path.Combine(pastaMenuIniciar, NomeAtalho));
+    }
 
-        // WScript.Shell via COM tardio (sem precisar de nenhum pacote
-        // NuGet extra) -- é a forma clássica e mais simples de criar um
-        // atalho .lnk a partir de C#. Se o Windows Script Host estiver
-        // desabilitado (bem raro, e normalmente só em máquinas com
-        // políticas de segurança bem restritivas), só não cria o atalho;
-        // isso não é crítico o suficiente pra falhar a instalação inteira.
+    /// <summary>
+    /// Mesmo atalho, também na Área de Trabalho de todo mundo que usar
+    /// esta máquina (CommonDesktopDirectory) -- pedido explícito: se o
+    /// ícone da bandeja for fechado, ainda tem que dar pra achar o painel
+    /// fácil, sem precisar procurar no Menu Iniciar.
+    /// </summary>
+    private static void CriarAtalhoAreaTrabalho()
+    {
+        var pastaAreaTrabalho = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        CriarAtalho(Path.Combine(pastaAreaTrabalho, NomeAtalho));
+    }
+
+    /// <summary>
+    /// WScript.Shell via COM tardio (sem precisar de nenhum pacote NuGet
+    /// extra) -- é a forma clássica e mais simples de criar um atalho
+    /// .lnk a partir de C#. Se o Windows Script Host estiver desabilitado
+    /// (bem raro, e normalmente só em máquinas com políticas de segurança
+    /// bem restritivas), só não cria o atalho; isso não é crítico o
+    /// suficiente pra falhar a instalação inteira.
+    /// </summary>
+    private static void CriarAtalho(string caminhoAtalho)
+    {
         var tipoShell = Type.GetTypeFromProgID("WScript.Shell");
         if (tipoShell == null) return;
 
@@ -273,8 +302,8 @@ public static class SelfInstaller
         {
             dynamic atalho = shell.CreateShortcut(caminhoAtalho);
             atalho.TargetPath = Instalacao.CaminhoExe;
-            atalho.Arguments = "--abrir-chamado";
-            atalho.Description = "Abrir o portal do GDesk para registrar ou acompanhar chamados";
+            atalho.Arguments = "--painel";
+            atalho.Description = "Abrir o painel do Agente GDesk (abrir chamado, ver setor)";
             atalho.WorkingDirectory = Instalacao.Pasta;
             atalho.Save();
         }
@@ -376,6 +405,7 @@ public static class SelfInstaller
 
         EncerrarOutrosProcessosEmExecucao();
         RemoverAtalhoMenuIniciar();
+        RemoverAtalhoAreaTrabalho();
         RemoverDoPainelDeControle();
         AgendarRemocaoDaPasta();
     }
@@ -402,8 +432,18 @@ public static class SelfInstaller
     {
         var pastaMenuIniciar = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");
-        var caminhoAtalho = Path.Combine(pastaMenuIniciar, "Abrir Chamado GDesk.lnk");
-        try { File.Delete(caminhoAtalho); }
+        try { File.Delete(Path.Combine(pastaMenuIniciar, NomeAtalho)); }
+        catch { /* não crítico */ }
+        // Remove também o atalho antigo (versões anteriores do agente),
+        // caso a máquina tenha sido instalada antes desta mudança.
+        try { File.Delete(Path.Combine(pastaMenuIniciar, "Abrir Chamado GDesk.lnk")); }
+        catch { /* não crítico */ }
+    }
+
+    private static void RemoverAtalhoAreaTrabalho()
+    {
+        var pastaAreaTrabalho = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        try { File.Delete(Path.Combine(pastaAreaTrabalho, NomeAtalho)); }
         catch { /* não crítico */ }
     }
 

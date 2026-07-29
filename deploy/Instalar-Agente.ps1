@@ -10,9 +10,9 @@
          compartilhamento de rede para C:\Program Files\GDeskAgent
       2. Cria/atualiza uma Tarefa Agendada que roda o agente a cada X
          horas, como SYSTEM (não depende de nenhum usuário logado)
-      3. Cria um atalho no Menu Iniciar ("Abrir Chamado GDesk") que
-         qualquer usuário logado pode clicar para abrir o portal e
-         registrar um chamado
+      3. Cria um atalho no Menu Iniciar ("GDesk Agente") que qualquer
+         usuário logado pode clicar para abrir o painel do agente (Setor/
+         Subsetor + botão "Abrir chamado")
 
     Como usar:
       1. Compile o agente (dotnet publish -- veja README.md) e copie a
@@ -86,16 +86,21 @@ Register-ScheduledTask -TaskName $nomeTarefaSync -Action $acao -Trigger $gatilho
 # Roda uma vez imediatamente, para não esperar o primeiro intervalo completo
 Start-ScheduledTask -TaskName $nomeTarefaSync
 
-# 3. Atalho "Abrir Chamado GDesk" no Menu Iniciar (visível para todos os usuários da máquina)
+# 3. Atalho "GDesk Agente" no Menu Iniciar (visível para todos os usuários da máquina) -- abre o
+#    Painel (--painel: Setor/Subsetor + botão "Abrir chamado"), mesmo atalho que SelfInstaller.CriarAtalho
+#    cria no fluxo interativo normal (ver SetupForm/README.md seção 5).
 $pastaMenuIniciar = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
-$caminhoAtalho = Join-Path $pastaMenuIniciar "Abrir Chamado GDesk.lnk"
+$caminhoAtalho = Join-Path $pastaMenuIniciar "GDesk Agente.lnk"
 Log "Criando atalho '$caminhoAtalho'..."
+
+# Remove o atalho antigo (versões anteriores deste script), se existir.
+Remove-Item -Path (Join-Path $pastaMenuIniciar "Abrir Chamado GDesk.lnk") -ErrorAction SilentlyContinue
 
 $shell = New-Object -ComObject WScript.Shell
 $atalho = $shell.CreateShortcut($caminhoAtalho)
 $atalho.TargetPath = $exePath
-$atalho.Arguments = "--abrir-chamado"
-$atalho.Description = "Fazer login e abrir o portal do GDesk para registrar ou acompanhar chamados"
+$atalho.Arguments = "--painel"
+$atalho.Description = "Abrir o painel do Agente GDesk (abrir chamado, ver setor)"
 $atalho.WorkingDirectory = $CaminhoDestino
 $atalho.Save()
 

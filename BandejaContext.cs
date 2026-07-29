@@ -20,12 +20,14 @@ public sealed class BandejaContext : ApplicationContext
 {
     private readonly NotifyIcon _icone;
     private readonly AgentConfig _config;
+    private PainelForm? _painel;
 
     public BandejaContext(AgentConfig config)
     {
         _config = config;
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("Painel", null, (_, _) => AbrirPainel());
         menu.Items.Add("Abrir chamado", null, (_, _) => AbrirChamado());
         menu.Items.Add("Sincronizar agora", null, async (_, _) => await SincronizarAgoraAsync());
         menu.Items.Add(new ToolStripSeparator());
@@ -38,7 +40,29 @@ public sealed class BandejaContext : ApplicationContext
             Visible = true,
             ContextMenuStrip = menu,
         };
-        _icone.DoubleClick += (_, _) => AbrirChamado();
+        // Clique esquerdo (único) abre o Painel -- o botão direito já abre
+        // o menu de contexto sozinho, sem precisar de handler nenhum aqui.
+        _icone.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left) AbrirPainel();
+        };
+    }
+
+    /// <summary>
+    /// Reaproveita a mesma janela se já estiver aberta (em vez de empilhar
+    /// várias em cliques repetidos no ícone) -- só traz pra frente.
+    /// </summary>
+    private void AbrirPainel()
+    {
+        if (_painel is { IsDisposed: false })
+        {
+            _painel.Activate();
+            return;
+        }
+
+        _painel = new PainelForm(_config);
+        _painel.Show();
+        _painel.Activate();
     }
 
     /// <summary>

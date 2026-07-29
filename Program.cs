@@ -3,6 +3,17 @@ using System.Text.Json;
 using System.Windows.Forms;
 using GDeskAgent;
 
+// OutputType=WinExe (ver GDeskAgent.csproj) evita janela preta quando a
+// Tarefa Agendada roda o agente sozinha, mas como efeito colateral o
+// processo não fica automaticamente conectado ao console de quem chamou
+// (PowerShell/cmd) -- Console.WriteLine roda sem erro, só não aparece em
+// lugar nenhum, e o próprio PowerShell nem espera o processo terminar
+// (por isso o prompt volta na hora, sem nada impresso). AttachConsole(-1)
+// pede pra usar o console do processo pai, SE existir um -- se o agente
+// foi iniciado sem console (Tarefa Agendada, duplo clique no Explorer),
+// essa chamada só falha em silêncio (retorna false) e nada muda.
+AttachConsole(-1);
+
 // Uso:
 //   GDeskAgent.exe                    -> primeira vez nesta máquina: mostra a tela de instalação (pede o token da empresa).
 //                                         já instalado: sincroniza o inventário (é isso que a Tarefa Agendada chama).
@@ -13,11 +24,14 @@ using GDeskAgent;
 //                                        BandejaContext. Não é pra ser chamado manualmente (mas não tem problema
 //                                        rodar -- só mostra o ícone com o menu de sempre).
 //   GDeskAgent.exe --teste            -> só coleta e imprime o inventário no console, sem enviar nada (debug local).
-//   GDeskAgent.exe --instalar-elevado TOKEN [--cliente-id ID] [--patrimonio "..."] [--numero-lacre "..."]
+//   GDeskAgent.exe --painel           -> abre o painel do agente (Setor/Subsetor atuais + botão "Abrir chamado") --
+//                                        é o que os atalhos "GDesk Agente" (Menu Iniciar/Área de Trabalho, ver
+//                                        SelfInstaller.CriarAtalho) e o clique no ícone da bandeja abrem.
+//   GDeskAgent.exe --instalar-elevado TOKEN [--cliente-id ID] [--patrimonio "..."] [--numero-lacre "..."] [--setor-id ID]
 //                                     -> uso interno: reentrada já elevada (UAC ou GPO) que faz a instalação de
-//                                        verdade -- ver SelfInstaller. Os 3 opcionais só fazem sentido vindos de
-//                                        um download personalizado por cliente (ver ConfiguracaoEmbutida.cs).
-//                                        Não é pra ser chamado manualmente.
+//                                        verdade -- ver SelfInstaller. Os opcionais só fazem sentido vindos de um
+//                                        download personalizado por cliente (ver ConfiguracaoEmbutida.cs) e/ou do
+//                                        Setor/Subsetor escolhido no SetupForm. Não é pra ser chamado manualmente.
 //   GDeskAgent.exe --desinstalar      -> é o que o botão "Desinstalar" do Painel de Controle > Programas e
 //                                        Recursos executa (ver SelfInstaller.RegistrarNoPainelDeControle);
 //                                        pede elevação via UAC e desfaz a instalação.
@@ -38,7 +52,8 @@ if (args.Length >= 2 && args[0] == "--instalar-elevado")
             args[1],
             ObterArgumento(args, "--cliente-id"),
             ObterArgumento(args, "--patrimonio"),
-            ObterArgumento(args, "--numero-lacre"));
+            ObterArgumento(args, "--numero-lacre"),
+            ObterArgumento(args, "--setor-id"));
         return 0;
     }
     catch (Exception ex)
@@ -119,6 +134,24 @@ if (args.Contains("--abrir-chamado"))
     return 0;
 }
 
+if (args.Contains("--painel"))
+{
+    if (!Instalacao.JaInstalado)
+    {
+        MessageBox.Show(
+            "O agente ainda não foi instalado nesta máquina. Dê duplo clique no GDeskAgent.exe (sem opções) primeiro.",
+            "GDesk",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+        return 1;
+    }
+
+    var configPainel = AgentConfig.Carregar();
+    ApplicationConfiguration.Initialize();
+    Application.Run(new PainelForm(configPainel));
+    return 0;
+}
+
 if (!Instalacao.JaInstalado)
 {
     // Primeira execução nesta máquina (nenhum appsettings.json em
@@ -189,3 +222,7 @@ static string? ObterArgumento(string[] argumentos, string nome)
     var indice = Array.IndexOf(argumentos, nome);
     return (indice >= 0 && indice + 1 < argumentos.Length) ? argumentos[indice + 1] : null;
 }
+
+// ATTACH_PARENT_PROCESS = -1 -- ver comentário lá em cima, antes do "Uso:".
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+static extern bool AttachConsole(int dwProcessId);

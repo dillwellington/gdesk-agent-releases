@@ -62,16 +62,21 @@ bin\Release\net8.0-windows\win-x64\publish\GDeskAgent.exe
 .\GDeskAgent.exe --teste
 
 # Primeira execução "de verdade": mostra a telinha pedindo o token da
-# empresa e se autoinstala (copia pra %ProgramData%\GDeskAgent, cria a
-# Tarefa Agendada e o atalho "Abrir Chamado GDesk" no Menu Iniciar)
+# empresa (e o Setor/Subsetor, obrigatórios -- ver GET /agente/estado) e
+# se autoinstala (copia pra %ProgramData%\GDeskAgent, cria a Tarefa
+# Agendada e os atalhos "GDesk Agente" no Menu Iniciar/Área de Trabalho)
 .\GDeskAgent.exe
 
 # Depois de instalado, roda de novo sem argumento para forçar uma nova
 # sincronização manual (é isso que a Tarefa Agendada chama sozinha)
 .\GDeskAgent.exe
 
-# Pede login (e-mail/senha) e abre o portal já autenticado -- só funciona
-# depois de instalado (usa o atalho "Abrir Chamado GDesk" por trás)
+# Abre o Painel (Setor/Subsetor atuais + botão "Abrir chamado") -- é o
+# que os atalhos "GDesk Agente" e o clique no ícone da bandeja abrem
+.\GDeskAgent.exe --painel
+
+# Pede login (e-mail/senha) e abre o portal já autenticado direto --
+# atalho rápido sem passar pelo Painel, só funciona depois de instalado
 .\GDeskAgent.exe --abrir-chamado
 
 # Mostra o ícone da bandeja manualmente (normalmente sobe sozinho no
@@ -109,14 +114,19 @@ que nunca terão o agente instalado (impressora, catraca etc.).
 2. Dê duplo clique nele
 3. Se o token já veio detectado automaticamente (baixado pelo GDesk — ver
    4b), o campo já aparece preenchido e só-leitura; senão, cole o token
-   da empresa na telinha que abre. Se o cliente exigir, preencha também a
-   etiqueta de patrimônio e/ou o número do lacre. Clique em **Instalar**
+   da empresa na telinha que abre. Escolha o Setor (e o Subsetor, se o
+   setor escolhido tiver) — obrigatório, e só dá pra definir aqui: depois
+   de instalado, só o sistema (tela de Recursos) pode mudar. Se o cliente
+   exigir, preencha também a etiqueta de patrimônio e/ou o número do
+   lacre. Clique em **Instalar**
 4. Aceite a permissão de administrador (UAC) que aparece — é necessária
-   para criar a tarefa de sincronização e o atalho pra todos os usuários
-   da máquina
-5. Pronto: "Abrir Chamado GDesk" já aparece no Menu Iniciar, a
+   para criar a tarefa de sincronização e os atalhos pra todos os
+   usuários da máquina
+5. Pronto: "GDesk Agente" já aparece no Menu Iniciar e na Área de
+   Trabalho (abre o Painel — Setor/Subsetor + botão Abrir chamado), a
    sincronização de inventário já está agendada sozinha, e um ícone
-   aparece na bandeja perto do relógio (ver seção 5b)
+   aparece na bandeja perto do relógio (clique nele também abre o Painel
+   — ver seção 5b)
 
 Não precisa saber o que é PowerShell, `Program Files` ou Tarefa Agendada
 — é só isso.
@@ -195,13 +205,23 @@ acompanham a primeira sincronização e viram
 obrigatoriedade do lado dele, em `app/routers/agente.py::sincronizar`,
 como segunda camada de segurança).
 
-## 5. "Abrir chamado" pelo agente
+## 5. Painel do agente ("Abrir chamado" e Setor/Subsetor)
 
-`GDeskAgent.exe --abrir-chamado` (o atalho "Abrir Chamado GDesk" no Menu
-Iniciar, ou o ícone da bandeja — seção 5b) só abre o navegador padrão
-direto em `PortalUrl/login.html`: a pessoa loga ali mesmo, com o e-mail e
-senha de sempre. O agente não pede nem vê a senha em nenhum momento — não
-tem formulário de login dentro dele.
+`GDeskAgent.exe --painel` (PainelForm.cs) abre uma janela pequena com:
+
+- **Setor/Subsetor atuais** — sempre buscados em `GET /agente/estado` na
+  hora (nunca lidos de `appsettings.json`), porque podem ter sido
+  alterados pelo sistema depois da instalação. É só leitura aqui: definir
+  o setor é feito uma única vez, na instalação (seção 4), e depois só o
+  sistema (tela de Recursos) pode mudar.
+- **Abrir chamado** — abre o navegador padrão direto em
+  `PortalUrl/login.html`: a pessoa loga ali mesmo, com o e-mail e senha
+  de sempre. O agente não pede nem vê a senha em nenhum momento — não tem
+  formulário de login dentro dele.
+
+É o que os atalhos "GDesk Agente" (Menu Iniciar e Área de Trabalho — seção
+4) e o clique no ícone da bandeja (seção 5b) abrem. Quem só quer ir direto
+pro login sem passar pelo painel pode usar `GDeskAgent.exe --abrir-chamado`.
 
 (Uma versão anterior deste agente tinha uma tela própria de e-mail/senha
 com login automático via ticket de uso único — foi simplificada de
@@ -212,10 +232,11 @@ mecanismo, sem uso no momento, mas sem problema em deixar assim.)
 ## 5b. Ícone na bandeja (acesso rápido)
 
 Depois de instalado, um ícone fica fixo na bandeja do sistema (perto do
-relógio) o tempo todo que o usuário estiver logado — clique direito (ou
-duplo clique) dá acesso rápido a:
+relógio) o tempo todo que o usuário estiver logado — clique esquerdo abre
+o Painel (seção 5) direto; clique direito dá um menu com:
 
-- **Abrir chamado** — mesma ação de "Abrir Chamado GDesk" (seção 5): abre o navegador na tela de login
+- **Painel** — mesma janela que o clique esquerdo abre
+- **Abrir chamado** — vai direto pro login, sem passar pelo painel
 - **Sincronizar agora** — força uma sincronização de inventário na hora,
   com um aviso (balão) de sucesso ou falha
 - **Sair** — fecha o ícone (não desinstala nada; ele volta sozinho no
@@ -239,7 +260,7 @@ confirmação, depois elevação (UAC), e remove tudo que a instalação criou:
 - As duas Tarefas Agendadas ("GDesk Agente - Sincronizacao" e "GDesk
   Agente - Bandeja")
 - O ícone da bandeja, se estiver rodando naquele momento
-- O atalho "Abrir Chamado GDesk" do Menu Iniciar
+- Os atalhos "GDesk Agente" do Menu Iniciar e da Área de Trabalho
 - A própria entrada em Programas e Recursos
 - A pasta `%ProgramData%\GDeskAgent` inteira (config e o `.exe` copiado)
 

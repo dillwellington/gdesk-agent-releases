@@ -24,6 +24,15 @@ public sealed class SincronizarPayload
     [JsonPropertyName("cliente_id")]
     public string? ClienteId { get; set; }
 
+    // Escolhido uma única vez na tela de instalação (SetupForm) -- ver
+    // AgentConfig.SetorId e InventoryCollector.ColetarComConfig. O backend
+    // só grava isso na CRIAÇÃO do Recurso (ver app/routers/agente.py::
+    // sincronizar); reenviar em sincronizações seguintes é inofensivo
+    // (ignorado), mas depois de instalado só o sistema (tela de Recursos)
+    // pode mudar esse valor.
+    [JsonPropertyName("setor_id")]
+    public string? SetorId { get; set; }
+
     [JsonPropertyName("patrimonio")]
     public string? Patrimonio { get; set; }
 
