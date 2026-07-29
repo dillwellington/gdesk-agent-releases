@@ -59,6 +59,21 @@ if (args.Length >= 2 && args[0] == "--instalar-elevado")
     catch (Exception ex)
     {
         Console.Error.WriteLine($"[GDeskAgent] Falha na instalação: {ex.Message}");
+        // TEMPORÁRIO -- este processo roda elevado via UAC (Verb=runas),
+        // então o console.Error acima quase nunca chega visível pra quem
+        // clicou em Instalar no SetupForm (é outro processo -- ver
+        // comentário em SelfInstaller.InstalarComElevacao). Grava a
+        // exceção completa (com stack trace) num arquivo em %TEMP%, que
+        // sobrevive independente de console, pra dar pra diagnosticar o
+        // "código 1" genérico que aparece na tela. Remover depois de
+        // achar a causa.
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(Path.GetTempPath(), "gdeskagent-erro-instalacao.txt"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\n{ex}");
+        }
+        catch { /* diagnóstico best-effort */ }
         return 1;
     }
 }
