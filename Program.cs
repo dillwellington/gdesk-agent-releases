@@ -48,13 +48,19 @@ if (args.Length >= 2 && args[0] == "--instalar-elevado")
         // vêm preenchidos quando o download foi personalizado por
         // cliente (ver ConfiguracaoEmbutida.cs/SetupForm.cs) e/ou o
         // cliente exige etiqueta de patrimônio/número do lacre.
-        SelfInstaller.ExecutarInstalacaoElevada(
+        var sincronizouComSucesso = SelfInstaller.ExecutarInstalacaoElevada(
             args[1],
             ObterArgumento(args, "--cliente-id"),
             ObterArgumento(args, "--patrimonio"),
             ObterArgumento(args, "--numero-lacre"),
             ObterArgumento(args, "--setor-id"));
-        return 0;
+
+        // 2 = instalação local OK, mas a primeira sincronização falhou
+        // (ver SelfInstaller.SincronizarAgora) -- convenção própria, só
+        // pra InstalarComElevacao (chamado pelo SetupForm, do processo
+        // sem privilégio) distinguir isso de uma falha de instalação de
+        // verdade e mostrar um aviso diferente em vez de "sucesso".
+        return sincronizouComSucesso ? 0 : 2;
     }
     catch (Exception ex)
     {

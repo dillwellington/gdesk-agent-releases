@@ -40,7 +40,17 @@ public static class SelfInstaller
     /// Cliente.agente_patrimonio_obrigatorio/agente_numero_lacre_obrigatorio
     /// exigem isso.
     /// </summary>
-    public static void InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
+    /// <summary>
+    /// Devolve true se a instalação local E a primeira sincronização
+    /// deram certo; false se a instalação local funcionou mas a primeira
+    /// sincronização falhou (rede, backend fora do ar, etc. -- ver
+    /// SincronizarAgora/ExecutarInstalacaoElevada). Nesse segundo caso não
+    /// é um erro fatal: a Tarefa Agendada tenta de novo sozinha a cada 6
+    /// horas. Lança exceção só quando a instalação em si falha de
+    /// verdade (token inválido, UAC recusado, etc.) -- ver SetupForm.cs
+    /// pra como cada caso vira uma mensagem diferente na tela.
+    /// </summary>
+    public static bool InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
     {
         // Valida o token ANTES de pedir elevação de administrador: evita
         // incomodar o usuário com a janela do UAC quando o token já está
@@ -83,10 +93,20 @@ public static class SelfInstaller
         }
 
         processo.WaitForExit();
+
+        // Código 2 = convenção própria (ver Program.cs, tratamento de
+        // "--instalar-elevado"): instalação local OK, mas a primeira
+        // sincronização falhou -- não é motivo pra tratar como erro, só
+        // pra avisar diferente na tela (ver SetupForm.cs).
+        if (processo.ExitCode == 2)
+        {
+            return false;
+        }
         if (processo.ExitCode != 0)
         {
             throw new Exception($"A instalação falhou (código {processo.ExitCode}). Confira o token e tente de novo.");
         }
+        return true;
     }
 
     /// <summary>
@@ -112,7 +132,8 @@ public static class SelfInstaller
     /// SYSTEM): faz a instalação de verdade. Seguro de rodar mais de uma
     /// vez -- sempre sobrescreve o que já existia.
     /// </summary>
-    public static void ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
+    /// <summary>Devolve true se a primeira sincronização deu certo (ver InstalarComElevacao).</summary>
+    public static bool ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
     {
         // Revalida aqui também (mesma checagem de InstalarComElevacao):
         // esta função também é chamada diretamente, sem passar pela tela
@@ -163,8 +184,9 @@ public static class SelfInstaller
         CriarAtalhoMenuIniciar();
         CriarAtalhoAreaTrabalho();
         RegistrarNoPainelDeControle();
-        SincronizarAgora();
+        var sincronizouComSucesso = SincronizarAgora();
         IniciarBandejaAgora();
+        return sincronizouComSucesso;
     }
 
     /// <summary>
@@ -313,14 +335,20 @@ public static class SelfInstaller
         }
     }
 
-    private static void SincronizarAgora()
+    /// <summary>
+    /// Roda a primeira sincronização na hora, sem esperar o primeiro
+    /// intervalo da Tarefa Agendada. O token já foi validado antes de
+    /// chegar aqui (ver ValidarToken), então uma falha nesse ponto é
+    /// outra coisa (rede instável, backend fora do ar, rede do cliente
+    /// bloqueando a conexão, etc.) -- não desfaz a instalação. Devolve
+    /// false nesse caso (ver ExecutarInstalacaoElevada/
+    /// InstalarComElevacao/SetupForm, que usam isso pra avisar o usuário
+    /// em vez de mostrar "instalado com sucesso" quando na prática o
+    /// Recurso ainda não apareceu no GDesk); a Tarefa Agendada tenta de
+    /// novo sozinha a cada 6 horas.
+    /// </summary>
+    private static bool SincronizarAgora()
     {
-        // Roda a primeira sincronização na hora, sem esperar o primeiro
-        // intervalo da Tarefa Agendada. O token já foi validado antes de
-        // chegar aqui (ver ValidarToken), então uma falha nesse ponto é
-        // outra coisa (rede instável, backend fora do ar etc.) -- não
-        // desfaz a instalação, só avisa no console; a Tarefa Agendada
-        // tenta de novo sozinha mais tarde.
         try
         {
             var config = AgentConfig.Carregar();
@@ -329,10 +357,12 @@ public static class SelfInstaller
             {
                 Console.Error.WriteLine($"[GDeskAgent] Aviso: primeira sincronização falhou ({resultado.mensagem}). Confira o token em Minha Empresa.");
             }
+            return resultado.sucesso;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[GDeskAgent] Aviso: não foi possível sincronizar agora ({ex.Message}).");
+            return false;
         }
     }
 

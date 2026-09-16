@@ -389,17 +389,35 @@ public sealed class SetupForm : Form
             // rodar isso direto na thread da tela travaria a fila de
             // mensagens do Windows, fazendo a janela aparecer como "Não
             // está respondendo" até terminar.
-            await Task.Run(() => SelfInstaller.InstalarComElevacao(
+            var sincronizouComSucesso = await Task.Run(() => SelfInstaller.InstalarComElevacao(
                 token,
                 _configEmbutida?.ClienteId,
                 string.IsNullOrWhiteSpace(patrimonio) ? null : patrimonio,
                 string.IsNullOrWhiteSpace(numeroLacre) ? null : numeroLacre,
                 setorId));
-            MessageBox.Show(
-                "Agente GDesk instalado com sucesso!\n\nProcure \"GDesk Agente\" no Menu Iniciar ou na Área de Trabalho sempre que precisar abrir o painel (abrir chamado, ver o setor).",
-                "GDesk",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+
+            if (sincronizouComSucesso)
+            {
+                MessageBox.Show(
+                    "Agente GDesk instalado com sucesso!\n\nProcure \"GDesk Agente\" no Menu Iniciar ou na Área de Trabalho sempre que precisar abrir o painel (abrir chamado, ver o setor).",
+                    "GDesk",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            else
+            {
+                // Instalação local funcionou (arquivos, tarefa agendada,
+                // atalhos), mas a primeira sincronização falhou -- sem
+                // isso ficar claro aqui, a máquina fica "instalada" sem
+                // nunca aparecer como Recurso no GDesk, e ninguém percebe
+                // até checar manualmente (ver SelfInstaller.SincronizarAgora).
+                MessageBox.Show(
+                    "Agente GDesk instalado nesta máquina, mas a primeira sincronização com o GDesk falhou (sem internet, backend fora do ar, ou a rede local bloqueando a conexão).\n\n" +
+                    "O agente vai tentar de novo sozinho daqui a até 6 horas. Pra confirmar antes disso, abra o Painel (\"GDesk Agente\" no Menu Iniciar) e use \"Sincronizar agora\" no ícone da bandeja -- se continuar falhando, confira a conexão com a internet desta máquina.",
+                    "GDesk",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
             Close();
         }
         catch (Exception ex)

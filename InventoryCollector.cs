@@ -12,7 +12,7 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.2.0";
+    public const string VersaoAgente = "1.3.0";
 
     public static SincronizarPayload Coletar()
     {
@@ -57,6 +57,17 @@ public static class InventoryCollector
         if (!string.IsNullOrWhiteSpace(config.SetorId)) payload.SetorId = config.SetorId;
         if (!string.IsNullOrWhiteSpace(config.Patrimonio)) payload.Patrimonio = config.Patrimonio;
         if (!string.IsNullOrWhiteSpace(config.NumeroLacre)) payload.NumeroLacre = config.NumeroLacre;
+
+        // Nenhum numero de serie real foi encontrado no hardware (BIOS,
+        // placa-mae nem UUID) -- ultimo recurso: usa o numero do
+        // patrimonio, que e garantidamente unico internamente. Nao e um
+        // numero de serie de fabricante de verdade, e so pra nao deixar o
+        // campo com lixo tipo "Default string" nem em branco.
+        if (string.IsNullOrWhiteSpace(payload.NumeroSerie) && !string.IsNullOrWhiteSpace(payload.Patrimonio))
+        {
+            payload.NumeroSerie = payload.Patrimonio;
+        }
+
         return payload;
     }
 
@@ -138,12 +149,77 @@ public static class InventoryCollector
         return "desktop";
     }
 
+    // Valores que placas genericas/montagem avulsa deixam gravados quando o
+    // fabricante nunca preenche o campo de serie de verdade -- nao e um
+    // numero de serie, e literalmente o texto de exemplo do firmware.
+    // Notebook/desktop de marca (Dell, HP, Lenovo...) normalmente nao cai
+    // aqui, porque vem com o service tag gravado de fabrica.
+    private static readonly HashSet<string> ValoresSerialInvalidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "default string",
+        "to be filled by o.e.m.",
+        "system serial number",
+        "chassis serial number",
+        "none",
+        "n/a",
+        "not applicable",
+        "not specified",
+        "serial number",
+        "0",
+        "1234567890",
+        "00000000",
+        "invalid",
+    };
+
+    private static readonly HashSet<string> UuidsInvalidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "00000000-0000-0000-0000-000000000000",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    };
+
+    private static bool EhSerialInvalido(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) || ValoresSerialInvalidos.Contains(valor.Trim());
+
     private static void PreencherBios(SincronizarPayload payload)
     {
+        string? serial = null;
         foreach (var bios in Consultar("SELECT SerialNumber FROM Win32_BIOS"))
         {
-            payload.NumeroSerie = bios["SerialNumber"]?.ToString()?.Trim();
+            serial = bios["SerialNumber"]?.ToString()?.Trim();
         }
+
+        if (EhSerialInvalido(serial))
+        {
+            // BIOS nao tem um numero de serie de verdade -- tenta a
+            // placa-mae antes de desistir (comum em maquina montada com
+            // pecas avulsas, onde so o campo da BIOS vem sem preencher).
+            serial = null;
+            foreach (var baseboard in Consultar("SELECT SerialNumber FROM Win32_BaseBoard"))
+            {
+                var candidato = baseboard["SerialNumber"]?.ToString()?.Trim();
+                if (!EhSerialInvalido(candidato)) serial = candidato;
+            }
+        }
+
+        if (EhSerialInvalido(serial))
+        {
+            // Ultimo recurso dentro do hardware: o UUID do SMBIOS (Type 1),
+            // que costuma existir mesmo quando os campos de serie acima
+            // vem vazios/placeholder.
+            foreach (var produto in Consultar("SELECT UUID FROM Win32_ComputerSystemProduct"))
+            {
+                var candidato = produto["UUID"]?.ToString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(candidato) && !UuidsInvalidos.Contains(candidato))
+                {
+                    serial = candidato;
+                }
+            }
+        }
+
+        // Se nada acima resolveu, fica nulo aqui -- o fallback final pro
+        // numero do patrimonio acontece em ColetarComConfig, porque so la
+        // o patrimonio (vindo do AgentConfig) ja esta disponivel.
+        payload.NumeroSerie = EhSerialInvalido(serial) ? null : serial;
     }
 
     private static void PreencherProcessador(SincronizarPayload payload)

@@ -95,7 +95,7 @@ public sealed class BandejaContext : ApplicationContext
     {
         _icone.Text = "GDesk Agente — sincronizando...";
         var cliente = new ApiClient(_config);
-        var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.Coletar());
+        var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
         _icone.Text = "GDesk Agente";
         _icone.ShowBalloonTip(
             4000,
