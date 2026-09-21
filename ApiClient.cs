@@ -185,6 +185,29 @@ public sealed class ApiClient
         }
     }
 
+    /// <summary>
+    /// Pergunta ao servidor se o sistema pediu uma sincronização que esta
+    /// máquina ainda não atendeu (GET /agente/comando). Chamada a cada poucos
+    /// minutos pelo ícone da bandeja -- qualquer falha (sem internet etc.)
+    /// devolve false em silêncio, sem poluir o log.
+    /// </summary>
+    public async Task<bool> ConsultarPedidoSincronizacaoAsync(string identificadorAgente)
+    {
+        try
+        {
+            using var limite = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var resposta = await _http.GetAsync($"agente/comando?identificador_agente={Uri.EscapeDataString(identificadorAgente)}", limite.Token).ConfigureAwait(false);
+            if (!resposta.IsSuccessStatusCode) return false;
+            var corpo = await resposta.Content.ReadAsStringAsync(limite.Token).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(corpo);
+            return doc.RootElement.TryGetProperty("sincronizar_agora", out var v) && v.ValueKind == JsonValueKind.True;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static string? ExtrairDetalhe(string corpoJson)
     {
         try

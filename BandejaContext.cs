@@ -21,6 +21,8 @@ public sealed class BandejaContext : ApplicationContext
     private readonly NotifyIcon _icone;
     private readonly AgentConfig _config;
     private PainelForm? _painel;
+    private readonly System.Windows.Forms.Timer _timerPedido;
+    private bool _sincronizando;
 
     public BandejaContext(AgentConfig config)
     {
@@ -41,6 +43,13 @@ public sealed class BandejaContext : ApplicationContext
             Visible = true,
             ContextMenuStrip = menu,
         };
+        // "Forçar sincronização" pelo sistema: a cada ~5 min pergunta ao servidor
+        // se há pedido pendente pra esta máquina (jitter de até 1 min pra não
+        // gerar rajada quando muitos agentes sobem juntos).
+        _timerPedido = new System.Windows.Forms.Timer { Interval = 5 * 60 * 1000 + Random.Shared.Next(0, 60_000) };
+        _timerPedido.Tick += async (_, _) => await VerificarPedidoAsync();
+        _timerPedido.Start();
+
         // Clique esquerdo (único) abre o Painel -- o botão direito já abre
         // o menu de contexto sozinho, sem precisar de handler nenhum aqui.
         _icone.MouseClick += (_, e) =>
@@ -92,17 +101,52 @@ public sealed class BandejaContext : ApplicationContext
         Process.Start(new ProcessStartInfo($"{_config.PortalUrl.TrimEnd('/')}/login.html") { UseShellExecute = true });
     }
 
-    private async Task SincronizarAgoraAsync()
+    /// <summary>
+    /// Consulta o pedido de sincronização feito pelo sistema (tela de
+    /// Recursos) e, se houver, sincroniza. Pedido atendido = o servidor passa
+    /// a ver ultima_sincronizacao maior que o horário do pedido.
+    /// </summary>
+    private async Task VerificarPedidoAsync()
     {
-        _icone.Text = "GDesk Agente — sincronizando...";
-        var cliente = new ApiClient(_config);
-        var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
-        _icone.Text = "GDesk Agente";
-        _icone.ShowBalloonTip(
-            4000,
-            "GDesk",
-            sucesso ? "Inventário sincronizado com sucesso." : $"Falha ao sincronizar: {mensagem}",
-            sucesso ? ToolTipIcon.Info : ToolTipIcon.Warning);
+        if (_sincronizando) return;
+        try
+        {
+            var identificador = InventoryCollector.ObterMachineGuid();
+            if (string.IsNullOrWhiteSpace(identificador)) return;
+            if (!await new ApiClient(_config).ConsultarPedidoSincronizacaoAsync(identificador)) return;
+
+            LogLocal.Registrar("INFO", "Pedido de sincronização recebido do sistema (GDesk).");
+            await Task.Delay(Random.Shared.Next(0, 45_000)); // espalha a carga entre as máquinas
+            await SincronizarAgoraAsync(silencioso: true);
+        }
+        catch (Exception ex)
+        {
+            LogLocal.Registrar("ERRO", $"Falha ao atender o pedido de sincronização: {ex.Message}");
+        }
+    }
+
+    private async Task SincronizarAgoraAsync(bool silencioso = false)
+    {
+        if (_sincronizando) return;
+        _sincronizando = true;
+        try
+        {
+            _icone.Text = "GDesk Agente — sincronizando...";
+            var cliente = new ApiClient(_config);
+            var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
+            _icone.Text = "GDesk Agente";
+            // Pedido vindo do sistema: só avisa se falhar, pra não incomodar o usuário à toa.
+            if (silencioso && sucesso) return;
+            _icone.ShowBalloonTip(
+                4000,
+                "GDesk",
+                sucesso ? "Inventário sincronizado com sucesso." : $"Falha ao sincronizar: {mensagem}",
+                sucesso ? ToolTipIcon.Info : ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _sincronizando = false;
+        }
     }
 
     private void Sair()
@@ -115,6 +159,7 @@ public sealed class BandejaContext : ApplicationContext
     {
         if (disposing)
         {
+            _timerPedido.Dispose();
             _icone.Dispose();
         }
         base.Dispose(disposing);
