@@ -406,7 +406,6 @@ public sealed class SetupForm : Form
                 return;
             }
 
-        {
             // Roda a instalação (validação de token + elevação + cópia de
             // arquivos + Tarefa Agendada) numa thread separada -- ela é
             // toda síncrona/bloqueante (inclusive chamadas de rede), e
