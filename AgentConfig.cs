@@ -33,6 +33,45 @@ public sealed class AgentConfig
     // este campo.
     public string? SetorId { get; set; }
 
+    // Setor escolhido À MÃO no painel do agente (botão "Atualizar setor").
+    // Fica num arquivo próprio na pasta logs\ (que os usuários comuns podem
+    // gravar) em vez de reescrever o appsettings.json, que o usuário da
+    // bandeja não consegue alterar. Quando existe, prevalece sobre
+    // SetorId em toda sincronização (tarefa agendada e bandeja).
+    private static string CaminhoSetorManual => Path.Combine(LogLocal.PastaLogs, "setor-manual.txt");
+    private static string CaminhoSetorManualReserva =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GDeskAgent", "logs", "setor-manual.txt");
+
+    public static string? LerSetorManual()
+    {
+        foreach (var caminho in new[] { CaminhoSetorManual, CaminhoSetorManualReserva })
+        {
+            try
+            {
+                if (!File.Exists(caminho)) continue;
+                var id = File.ReadAllText(caminho).Trim();
+                if (!string.IsNullOrEmpty(id)) return id;
+            }
+            catch { /* best-effort */ }
+        }
+        return null;
+    }
+
+    public static bool GravarSetorManual(string setorId)
+    {
+        foreach (var caminho in new[] { CaminhoSetorManual, CaminhoSetorManualReserva })
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(caminho)!);
+                File.WriteAllText(caminho, setorId);
+                return true;
+            }
+            catch { /* tenta o próximo local */ }
+        }
+        return false;
+    }
+
     public static AgentConfig Carregar()
     {
         if (!File.Exists(Instalacao.CaminhoConfig))

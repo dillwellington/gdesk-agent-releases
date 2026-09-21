@@ -13,19 +13,30 @@ namespace GDeskAgent;
 /// ícone da bandeja e precisa de outro jeito de achar isso rápido.
 ///
 /// Mostra o Setor/Subsetor ATUAL do recurso (sempre buscado em
-/// GET /agente/estado, nunca lido de appsettings.json -- o valor pode ter
-/// sido alterado pelo sistema depois da instalação, e aqui é só leitura:
-/// definir/alterar setor é feito uma única vez no SetupForm, na
-/// instalação, ou depois só pelo sistema, nunca de novo por aqui) e o
-/// botão "Abrir chamado" (mesmo comportamento do menu da bandeja: abre o
+/// GET /agente/estado) e permite alterá-lo (botão "Atualizar setor"), além
+/// do botão "Abrir chamado" (mesmo comportamento do menu da bandeja: abre o
 /// navegador direto na tela de login do GDesk).
 /// </summary>
 public sealed class PainelForm : Form
 {
     private readonly AgentConfig _config;
 
-    private readonly Label _rotuloSetor = new() { AutoSize = false, Left = 20, Width = 340, Height = 22 };
-    private readonly Label _rotuloSubsetor = new() { AutoSize = false, Left = 20, Width = 340, Height = 22 };
+    private readonly Label _rotuloSetor = new() { Text = "Setor", AutoSize = true, Left = 20 };
+    private readonly Label _rotuloSubsetor = new() { Text = "Subsetor", AutoSize = true, Left = 20 };
+    private readonly ComboBox _comboSetor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Width = 340, Enabled = false };
+    private readonly ComboBox _comboSubsetor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Width = 340, Enabled = false };
+    private readonly Label _rotuloStatusSetor = new() { AutoSize = false, Left = 20, Width = 340, Height = 34, ForeColor = Color.Gray };
+    private readonly Button _botaoAtualizarSetor = new() { Text = "Atualizar setor", Enabled = false };
+    private List<SetorAgenteItem> _setores = new();
+    private bool _carregandoCombos;
+
+    private sealed class ItemCombo
+    {
+        public string Id { get; }
+        public string Nome { get; }
+        public ItemCombo(string id, string nome) { Id = id; Nome = nome; }
+        public override string ToString() => Nome;
+    }
     private readonly Label _rotuloSync = new() { AutoSize = false, Left = 20, Width = 340, Height = 40 };
     private readonly Button _botaoLog = new() { Text = "Ver log de sincronização" };
     private readonly Button _botaoAbrirChamado = new() { Text = "Abrir chamado" };
@@ -56,16 +67,32 @@ public sealed class PainelForm : Form
         y += 34;
 
         _rotuloSetor.Top = y;
-        _rotuloSetor.Text = "Setor: carregando...";
-        _rotuloSetor.ForeColor = Color.Gray;
         Controls.Add(_rotuloSetor);
-        y += 24;
+        y += 20;
+        _comboSetor.Top = y;
+        _comboSetor.SelectedIndexChanged += (_, _) => { if (!_carregandoCombos) PopularSubsetores(null); };
+        Controls.Add(_comboSetor);
+        y += 30;
 
         _rotuloSubsetor.Top = y;
-        _rotuloSubsetor.Text = "Subsetor: carregando...";
-        _rotuloSubsetor.ForeColor = Color.Gray;
         Controls.Add(_rotuloSubsetor);
-        y += 30;
+        y += 20;
+        _comboSubsetor.Top = y;
+        Controls.Add(_comboSubsetor);
+        y += 32;
+
+        _botaoAtualizarSetor.Left = 20;
+        _botaoAtualizarSetor.Top = y;
+        _botaoAtualizarSetor.Width = 340;
+        _botaoAtualizarSetor.Height = 30;
+        _botaoAtualizarSetor.Click += async (_, _) => await AtualizarSetorAsync();
+        Controls.Add(_botaoAtualizarSetor);
+        y += 34;
+
+        _rotuloStatusSetor.Top = y;
+        _rotuloStatusSetor.Text = "Carregando setores...";
+        Controls.Add(_rotuloStatusSetor);
+        y += 38;
 
         _rotuloSync.Top = y;
         Controls.Add(_rotuloSync);
@@ -140,10 +167,9 @@ public sealed class PainelForm : Form
     }
 
     /// <summary>
-    /// Busca o setor_id atual do recurso (pode ter sido alterado pelo
-    /// sistema desde a instalação) e a lista de setores da empresa, pra
-    /// resolver os nomes de Setor/Subsetor pra exibição. Nunca escreve
-    /// nada -- só leitura, ver comentário na classe.
+    /// Busca o setor_id atual do recurso e a lista de setores da empresa
+    /// (GET /agente/estado) e preenche os combos já com o setor atual
+    /// selecionado.
     /// </summary>
     private async Task CarregarSetorAtualAsync()
     {
@@ -152,40 +178,109 @@ public sealed class PainelForm : Form
 
         if (!sucesso || estado == null)
         {
-            _rotuloSetor.ForeColor = Color.Firebrick;
-            _rotuloSetor.Text = $"Não foi possível carregar o setor ({mensagem}).";
-            _rotuloSubsetor.Text = "";
+            _rotuloStatusSetor.ForeColor = Color.Firebrick;
+            _rotuloStatusSetor.Text = $"Não foi possível carregar o setor ({mensagem}).";
             return;
         }
 
-        _rotuloSetor.ForeColor = Color.Black;
-        _rotuloSubsetor.ForeColor = Color.Black;
-
-        if (string.IsNullOrEmpty(estado.SetorId))
+        _setores = estado.Setores;
+        _carregandoCombos = true;
+        try
         {
-            _rotuloSetor.Text = "Setor: (não definido)";
-            _rotuloSubsetor.Text = "Subsetor: —";
+            _comboSetor.Items.Clear();
+            foreach (var s in _setores.Where(s => string.IsNullOrEmpty(s.SetorPaiId)).OrderBy(s => s.Nome))
+                _comboSetor.Items.Add(new ItemCombo(s.Id, s.Nome));
+
+            var atual = _setores.FirstOrDefault(s => s.Id == estado.SetorId);
+            string? principalId = atual == null ? null : (string.IsNullOrEmpty(atual.SetorPaiId) ? atual.Id : atual.SetorPaiId);
+            string? subsetorId = atual != null && !string.IsNullOrEmpty(atual.SetorPaiId) ? atual.Id : null;
+
+            foreach (var item in _comboSetor.Items.Cast<ItemCombo>())
+                if (item.Id == principalId) _comboSetor.SelectedItem = item;
+
+            _comboSetor.Enabled = _comboSetor.Items.Count > 0;
+            PopularSubsetores(subsetorId);
+        }
+        finally
+        {
+            _carregandoCombos = false;
+        }
+
+        _botaoAtualizarSetor.Enabled = _comboSetor.Enabled;
+        _rotuloStatusSetor.ForeColor = Color.Gray;
+        _rotuloStatusSetor.Text = _comboSetor.Enabled
+            ? "Escolha o setor/subsetor e clique em Atualizar setor."
+            : "Nenhum setor cadastrado nesta empresa.";
+    }
+
+    private void PopularSubsetores(string? selecionarId)
+    {
+        _comboSubsetor.Items.Clear();
+        _comboSubsetor.Enabled = false;
+        if (_comboSetor.SelectedItem is not ItemCombo setor) return;
+
+        foreach (var f in _setores.Where(s => s.SetorPaiId == setor.Id).OrderBy(s => s.Nome))
+            _comboSubsetor.Items.Add(new ItemCombo(f.Id, f.Nome));
+
+        if (_comboSubsetor.Items.Count == 0) return;
+        _comboSubsetor.Enabled = true;
+        foreach (var item in _comboSubsetor.Items.Cast<ItemCombo>())
+            if (item.Id == selecionarId) _comboSubsetor.SelectedItem = item;
+    }
+
+    /// <summary>
+    /// Grava o setor escolhido (setor-manual.txt, que prevalece sobre o do
+    /// appsettings) e sincroniza na hora; o servidor aplica o setor do
+    /// agente em toda sincronização.
+    /// </summary>
+    private async Task AtualizarSetorAsync()
+    {
+        if (_comboSetor.SelectedItem is not ItemCombo setor)
+        {
+            _rotuloStatusSetor.ForeColor = Color.Firebrick;
+            _rotuloStatusSetor.Text = "Escolha o setor.";
+            return;
+        }
+        if (_comboSubsetor.Enabled && _comboSubsetor.SelectedItem == null)
+        {
+            _rotuloStatusSetor.ForeColor = Color.Firebrick;
+            _rotuloStatusSetor.Text = "Escolha o subsetor.";
             return;
         }
 
-        var atual = estado.Setores.FirstOrDefault(s => s.Id == estado.SetorId);
-        if (atual == null)
+        var setorId = (_comboSubsetor.SelectedItem as ItemCombo)?.Id ?? setor.Id;
+        var nome = (_comboSubsetor.SelectedItem as ItemCombo)?.Nome ?? setor.Nome;
+
+        if (!AgentConfig.GravarSetorManual(setorId))
         {
-            _rotuloSetor.Text = "Setor: (não definido)";
-            _rotuloSubsetor.Text = "Subsetor: —";
+            _rotuloStatusSetor.ForeColor = Color.Firebrick;
+            _rotuloStatusSetor.Text = "Não foi possível salvar o setor nesta máquina.";
             return;
         }
 
-        if (string.IsNullOrEmpty(atual.SetorPaiId))
+        _botaoAtualizarSetor.Enabled = false;
+        _rotuloStatusSetor.ForeColor = Color.Gray;
+        _rotuloStatusSetor.Text = "Atualizando...";
+        LogLocal.Registrar("INFO", $"Setor alterado manualmente no painel do agente para \"{nome}\" ({setorId}).");
+        try
         {
-            _rotuloSetor.Text = $"Setor: {atual.Nome}";
-            _rotuloSubsetor.Text = "Subsetor: —";
+            var (sucesso, mensagem) = await new ApiClient(_config).SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
+            AtualizarStatusSincronizacao();
+            if (sucesso)
+            {
+                await CarregarSetorAtualAsync();
+                _rotuloStatusSetor.ForeColor = Color.DarkGreen;
+                _rotuloStatusSetor.Text = $"Setor atualizado para \"{nome}\".";
+            }
+            else
+            {
+                _rotuloStatusSetor.ForeColor = Color.Firebrick;
+                _rotuloStatusSetor.Text = $"Setor salvo, mas a sincronização falhou: {mensagem}";
+            }
         }
-        else
+        finally
         {
-            var pai = estado.Setores.FirstOrDefault(s => s.Id == atual.SetorPaiId);
-            _rotuloSetor.Text = $"Setor: {pai?.Nome ?? "—"}";
-            _rotuloSubsetor.Text = $"Subsetor: {atual.Nome}";
+            _botaoAtualizarSetor.Enabled = true;
         }
     }
 }

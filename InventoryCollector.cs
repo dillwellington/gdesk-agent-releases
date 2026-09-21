@@ -12,7 +12,7 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.5.0";
+    public const string VersaoAgente = "1.6.0";
 
     public static SincronizarPayload Coletar()
     {
@@ -54,7 +54,9 @@ public static class InventoryCollector
     {
         var payload = Coletar();
         if (!string.IsNullOrWhiteSpace(config.ClienteId)) payload.ClienteId = config.ClienteId;
-        if (!string.IsNullOrWhiteSpace(config.SetorId)) payload.SetorId = config.SetorId;
+        var setorManual = AgentConfig.LerSetorManual();
+        if (!string.IsNullOrWhiteSpace(setorManual)) payload.SetorId = setorManual;
+        else if (!string.IsNullOrWhiteSpace(config.SetorId)) payload.SetorId = config.SetorId;
         if (!string.IsNullOrWhiteSpace(config.Patrimonio)) payload.Patrimonio = config.Patrimonio;
         if (!string.IsNullOrWhiteSpace(config.NumeroLacre)) payload.NumeroLacre = config.NumeroLacre;
 
