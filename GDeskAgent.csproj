@@ -18,7 +18,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>GDeskAgent</AssemblyName>
     <!-- Versão exibida em Propriedades > Detalhes do .exe. Manter igual a InventoryCollector.VersaoAgente. -->
-    <Version>1.6.0</Version>
+    <Version>1.7.0</Version>
     <RootNamespace>GDeskAgent</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Necessário para a telinha de login (LoginForm.cs) exibida pela

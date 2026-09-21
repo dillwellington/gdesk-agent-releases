@@ -33,38 +33,48 @@ public sealed class AgentConfig
     // este campo.
     public string? SetorId { get; set; }
 
-    // Setor escolhido À MÃO no painel do agente (botão "Atualizar setor").
-    // Fica num arquivo próprio na pasta logs\ (que os usuários comuns podem
-    // gravar) em vez de reescrever o appsettings.json, que o usuário da
-    // bandeja não consegue alterar. Quando existe, prevalece sobre
-    // SetorId em toda sincronização (tarefa agendada e bandeja).
-    private static string CaminhoSetorManual => Path.Combine(LogLocal.PastaLogs, "setor-manual.txt");
-    private static string CaminhoSetorManualReserva =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GDeskAgent", "logs", "setor-manual.txt");
-
-    public static string? LerSetorManual()
+    // Valores alterados À MÃO no painel do agente (botão "Alterar cadastro",
+    // que exige login de agente/admin_cliente no GDesk). Ficam num arquivo
+    // próprio na pasta logs\ (que usuários comuns podem gravar) em vez de
+    // reescrever o appsettings.json, que o usuário da bandeja não consegue
+    // alterar. O que estiver aqui prevalece sobre o appsettings.json em toda
+    // sincronização (tarefa agendada e bandeja).
+    public sealed class CadastroManual
     {
-        foreach (var caminho in new[] { CaminhoSetorManual, CaminhoSetorManualReserva })
+        public string? ClienteId { get; set; }
+        public string? SetorId { get; set; }
+        public string? Patrimonio { get; set; }
+        public string? NumeroLacre { get; set; }
+    }
+
+    private static string CaminhoCadastroManual => Path.Combine(LogLocal.PastaLogs, "cadastro-manual.json");
+    private static string CaminhoCadastroManualReserva =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GDeskAgent", "logs", "cadastro-manual.json");
+
+    public static CadastroManual? LerCadastroManual()
+    {
+        foreach (var caminho in new[] { CaminhoCadastroManual, CaminhoCadastroManualReserva })
         {
             try
             {
                 if (!File.Exists(caminho)) continue;
-                var id = File.ReadAllText(caminho).Trim();
-                if (!string.IsNullOrEmpty(id)) return id;
+                var valor = JsonSerializer.Deserialize<CadastroManual>(File.ReadAllText(caminho));
+                if (valor != null) return valor;
             }
             catch { /* best-effort */ }
         }
         return null;
     }
 
-    public static bool GravarSetorManual(string setorId)
+    public static bool GravarCadastroManual(CadastroManual valor)
     {
-        foreach (var caminho in new[] { CaminhoSetorManual, CaminhoSetorManualReserva })
+        var json = JsonSerializer.Serialize(valor);
+        foreach (var caminho in new[] { CaminhoCadastroManual, CaminhoCadastroManualReserva })
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(caminho)!);
-                File.WriteAllText(caminho, setorId);
+                File.WriteAllText(caminho, json);
                 return true;
             }
             catch { /* tenta o próximo local */ }

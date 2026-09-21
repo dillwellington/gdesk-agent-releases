@@ -128,6 +128,51 @@ public sealed class ApiClient
     }
 
     /// <summary>
+    /// POST /agente/cadastro/autorizar: confere o login (agente/admin_cliente)
+    /// e devolve os valores atuais do recurso + clientes escolhíveis.
+    /// </summary>
+    public Task<(bool sucesso, CadastroAtualResposta? cadastro, string mensagem)> AutorizarCadastroAsync(string identificadorAgente, string email, string senha)
+        => PostCadastroAsync("agente/cadastro/autorizar", new Dictionary<string, object?>
+        {
+            ["identificador_agente"] = identificadorAgente,
+            ["email"] = email,
+            ["senha"] = senha,
+        });
+
+    /// <summary>POST /agente/cadastro/alterar: campos null não são alterados.</summary>
+    public Task<(bool sucesso, CadastroAtualResposta? cadastro, string mensagem)> AlterarCadastroAsync(
+        string identificadorAgente, string email, string senha, string? clienteId, string? setorId, string? patrimonio, string? numeroLacre)
+        => PostCadastroAsync("agente/cadastro/alterar", new Dictionary<string, object?>
+        {
+            ["identificador_agente"] = identificadorAgente,
+            ["email"] = email,
+            ["senha"] = senha,
+            ["cliente_id"] = string.IsNullOrWhiteSpace(clienteId) ? null : clienteId,
+            ["setor_id"] = string.IsNullOrWhiteSpace(setorId) ? null : setorId,
+            ["patrimonio"] = string.IsNullOrWhiteSpace(patrimonio) ? null : patrimonio.Trim(),
+            ["numero_lacre"] = string.IsNullOrWhiteSpace(numeroLacre) ? null : numeroLacre.Trim(),
+        });
+
+    private async Task<(bool sucesso, CadastroAtualResposta? cadastro, string mensagem)> PostCadastroAsync(string caminho, Dictionary<string, object?> corpoEnvio)
+    {
+        try
+        {
+            var resposta = await _http.PostAsJsonAsync(caminho, corpoEnvio).ConfigureAwait(false);
+            var corpo = await resposta.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (resposta.IsSuccessStatusCode)
+            {
+                var cadastro = JsonSerializer.Deserialize<CadastroAtualResposta>(corpo, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return (true, cadastro, "");
+            }
+            return (false, null, ExtrairDetalhe(corpo) ?? $"HTTP {(int)resposta.StatusCode}: {corpo}");
+        }
+        catch (Exception ex)
+        {
+            return (false, null, $"Falha de conexão: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Confirma junto do backend se o token é válido para alguma empresa,
     /// sem gravar nada -- chamado pelo instalador antes de configurar a
     /// máquina (ver SelfInstaller.InstalarComElevacao/ExecutarInstalacaoElevada).

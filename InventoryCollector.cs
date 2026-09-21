@@ -12,7 +12,7 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.6.0";
+    public const string VersaoAgente = "1.7.0";
 
     public static SincronizarPayload Coletar()
     {
@@ -53,12 +53,13 @@ public static class InventoryCollector
     public static SincronizarPayload ColetarComConfig(AgentConfig config)
     {
         var payload = Coletar();
-        if (!string.IsNullOrWhiteSpace(config.ClienteId)) payload.ClienteId = config.ClienteId;
-        var setorManual = AgentConfig.LerSetorManual();
-        if (!string.IsNullOrWhiteSpace(setorManual)) payload.SetorId = setorManual;
-        else if (!string.IsNullOrWhiteSpace(config.SetorId)) payload.SetorId = config.SetorId;
-        if (!string.IsNullOrWhiteSpace(config.Patrimonio)) payload.Patrimonio = config.Patrimonio;
-        if (!string.IsNullOrWhiteSpace(config.NumeroLacre)) payload.NumeroLacre = config.NumeroLacre;
+        // Valores alterados no painel (com login) prevalecem sobre os da instalação.
+        var manual = AgentConfig.LerCadastroManual();
+        string? Escolher(string? doManual, string? daConfig) => !string.IsNullOrWhiteSpace(doManual) ? doManual : (!string.IsNullOrWhiteSpace(daConfig) ? daConfig : null);
+        payload.ClienteId = Escolher(manual?.ClienteId, config.ClienteId) ?? payload.ClienteId;
+        payload.SetorId = Escolher(manual?.SetorId, config.SetorId) ?? payload.SetorId;
+        payload.Patrimonio = Escolher(manual?.Patrimonio, config.Patrimonio) ?? payload.Patrimonio;
+        payload.NumeroLacre = Escolher(manual?.NumeroLacre, config.NumeroLacre) ?? payload.NumeroLacre;
 
         // Nenhum numero de serie real foi encontrado no hardware (BIOS,
         // placa-mae nem UUID) -- ultimo recurso: usa o numero do

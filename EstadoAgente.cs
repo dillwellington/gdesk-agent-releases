@@ -33,3 +33,20 @@ public sealed class SetorAgenteItem
     [JsonPropertyName("setor_pai_id")]
     public string? SetorPaiId { get; set; }
 }
+
+/// <summary>Espelha app/schemas/agente.py::CadastroAtualResposta (POST /agente/cadastro/autorizar e /alterar).</summary>
+public sealed class CadastroAtualResposta
+{
+    [JsonPropertyName("usuario_nome")] public string UsuarioNome { get; set; } = "";
+    [JsonPropertyName("cliente_id")] public string? ClienteId { get; set; }
+    [JsonPropertyName("setor_id")] public string? SetorId { get; set; }
+    [JsonPropertyName("patrimonio")] public string? Patrimonio { get; set; }
+    [JsonPropertyName("numero_lacre")] public string? NumeroLacre { get; set; }
+    [JsonPropertyName("clientes")] public List<ClienteAgenteItem> Clientes { get; set; } = new();
+}
+
+public sealed class ClienteAgenteItem
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("nome")] public string Nome { get; set; } = "";
+}
