@@ -1,0 +1,52 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!--
+    MSI do GDesk Agente (WiX v4). Não carrega o .exe: só um script que baixa
+    o GDeskAgent.exe da release "agente-latest" e roda "--instalar-elevado"
+    (o instalador que já existe). Instalação silenciosa, ex. GPO/Intune/RMM:
+
+      msiexec /i GDeskAgent.msi /qn TOKEN=xxxx [CLIENTEID=... SETORID=... PATRIMONIO=... LACRE=...]
+
+    Desinstalar (pelo Painel de Controle ou msiexec /x) roda "--desinstalar-elevado".
+  -->
+  <Package Name="GDesk Agente (instalador)" Manufacturer="GD Soluções" Version="1.8.0"
+           UpgradeCode="6C1E5C1B-7A0F-4E34-9B6C-3F1D2A9E7B10" Scope="perMachine" Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="Já existe uma versão mais nova deste instalador." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="CLIENTEID" Secure="yes" />
+    <Property Id="SETORID" Secure="yes" />
+    <Property Id="PATRIMONIO" Secure="yes" />
+    <Property Id="LACRE" Secure="yes" />
+
+    <Launch Condition="Installed OR TOKEN" Message="Informe o token da empresa: msiexec /i GDeskAgent.msi TOKEN=..." />
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="PASTAGDESK" Name="GDeskAgent">
+        <Directory Id="PASTAINSTALADOR" Name="instalador">
+          <Component Id="ScriptInstalador" Guid="A3F5B6C2-1D4E-4F70-8A9B-2C6D7E8F9A01">
+            <File Id="InstalarPs1" Source="Instalar-GDeskAgent.ps1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Principal" Level="1">
+      <ComponentRef Id="ScriptInstalador" />
+    </Feature>
+
+    <!-- Instalar: depois de gravar o script, antes de finalizar. -->
+    <CustomAction Id="InstalarAgente" Directory="PASTAINSTALADOR" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#InstalarPs1]&quot; -Token &quot;[TOKEN]&quot; -ClienteId &quot;[CLIENTEID]&quot; -SetorId &quot;[SETORID]&quot; -Patrimonio &quot;[PATRIMONIO]&quot; -Lacre &quot;[LACRE]&quot;" />
+
+    <!-- Desinstalar: usa o próprio agente instalado (remove tarefas, atalhos, entrada no Painel de Controle e pasta). -->
+    <CustomAction Id="DesinstalarAgente" Directory="PASTAGDESK" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[PASTAGDESK]GDeskAgent.exe&quot; --desinstalar-elevado" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstalarAgente" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
+      <Custom Action="DesinstalarAgente" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
