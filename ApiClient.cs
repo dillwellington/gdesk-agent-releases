@@ -120,6 +120,38 @@ public sealed class ApiClient
         }
     }
 
+    /// <summary>
+    /// Pré-checagem de duplicidade (GET /agente/verificar-duplicidade):
+    /// usada pelo SetupForm ANTES de instalar. Devolve (true, mensagem)
+    /// se o patrimônio/número de série já pertence a outro Recurso da
+    /// empresa. Falha de rede NÃO bloqueia (devolve false) -- o backend
+    /// ainda barra a duplicidade na sincronização (409).
+    /// </summary>
+    public async Task<(bool duplicado, string mensagem)> VerificarDuplicidadeAsync(string? patrimonio, string? numeroSerie, string? identificadorAgente)
+    {
+        try
+        {
+            var consulta = new List<string>();
+            if (!string.IsNullOrWhiteSpace(patrimonio)) consulta.Add($"patrimonio={Uri.EscapeDataString(patrimonio)}");
+            if (!string.IsNullOrWhiteSpace(numeroSerie)) consulta.Add($"numero_serie={Uri.EscapeDataString(numeroSerie)}");
+            if (!string.IsNullOrWhiteSpace(identificadorAgente)) consulta.Add($"identificador_agente={Uri.EscapeDataString(identificadorAgente)}");
+            if (consulta.Count == 0) return (false, "");
+
+            var resposta = await _http.GetAsync("agente/verificar-duplicidade?" + string.Join("&", consulta)).ConfigureAwait(false);
+            var corpo = await resposta.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (!resposta.IsSuccessStatusCode) return (false, "");
+
+            using var doc = JsonDocument.Parse(corpo);
+            var duplicado = doc.RootElement.TryGetProperty("duplicado", out var d) && d.ValueKind == JsonValueKind.True;
+            var mensagem = doc.RootElement.TryGetProperty("mensagem", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() ?? "" : "";
+            return (duplicado, mensagem);
+        }
+        catch (Exception)
+        {
+            return (false, "");
+        }
+    }
+
     private static string? ExtrairDetalhe(string corpoJson)
     {
         try

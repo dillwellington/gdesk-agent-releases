@@ -383,6 +383,30 @@ public sealed class SetupForm : Form
 
         try
         {
+            // Pré-checagem: patrimônio/número de série não podem repetir
+            // dentro da empresa (mesma regra do cadastro manual). Feita
+            // ANTES de instalar, pra não deixar a máquina instalada sem
+            // nunca virar Recurso. Coleta o inventário aqui só pra pegar
+            // o número de série e o identificador desta máquina.
+            var (duplicado, mensagemDuplicado) = await Task.Run(async () =>
+            {
+                var inventario = InventoryCollector.Coletar();
+                return await new ApiClient(new AgentConfig { AgentToken = token })
+                    .VerificarDuplicidadeAsync(
+                        string.IsNullOrWhiteSpace(patrimonio) ? null : patrimonio,
+                        inventario.NumeroSerie,
+                        inventario.IdentificadorAgente);
+            });
+            if (duplicado)
+            {
+                _rotuloErro.ForeColor = Color.Firebrick;
+                _rotuloErro.Text = mensagemDuplicado;
+                _botaoInstalar.Enabled = true;
+                _botaoInstalar.Text = "Instalar";
+                return;
+            }
+
+        {
             // Roda a instalação (validação de token + elevação + cópia de
             // arquivos + Tarefa Agendada) numa thread separada -- ela é
             // toda síncrona/bloqueante (inclusive chamadas de rede), e
