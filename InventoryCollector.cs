@@ -12,7 +12,7 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.3.0";
+    public const string VersaoAgente = "1.4.0";
 
     public static SincronizarPayload Coletar()
     {

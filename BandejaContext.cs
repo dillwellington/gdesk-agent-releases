@@ -30,6 +30,7 @@ public sealed class BandejaContext : ApplicationContext
         menu.Items.Add("Painel", null, (_, _) => AbrirPainel());
         menu.Items.Add("Abrir chamado", null, (_, _) => AbrirChamado());
         menu.Items.Add("Sincronizar agora", null, async (_, _) => await SincronizarAgoraAsync());
+        menu.Items.Add("Ver log de sincronização", null, (_, _) => new LogAgenteForm(_config).Show());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Sair", null, (_, _) => Sair());
 

@@ -26,6 +26,8 @@ public sealed class PainelForm : Form
 
     private readonly Label _rotuloSetor = new() { AutoSize = false, Left = 20, Width = 340, Height = 22 };
     private readonly Label _rotuloSubsetor = new() { AutoSize = false, Left = 20, Width = 340, Height = 22 };
+    private readonly Label _rotuloSync = new() { AutoSize = false, Left = 20, Width = 340, Height = 40 };
+    private readonly Button _botaoLog = new() { Text = "Ver log de sincronização" };
     private readonly Button _botaoAbrirChamado = new() { Text = "Abrir chamado" };
     private readonly Button _botaoFechar = new() { Text = "Fechar" };
 
@@ -63,7 +65,24 @@ public sealed class PainelForm : Form
         _rotuloSubsetor.Text = "Subsetor: carregando...";
         _rotuloSubsetor.ForeColor = Color.Gray;
         Controls.Add(_rotuloSubsetor);
-        y += 34;
+        y += 30;
+
+        _rotuloSync.Top = y;
+        Controls.Add(_rotuloSync);
+        y += 46;
+
+        _botaoLog.Left = 20;
+        _botaoLog.Top = y;
+        _botaoLog.Width = 340;
+        _botaoLog.Height = 30;
+        _botaoLog.Click += (_, _) =>
+        {
+            var log = new LogAgenteForm(_config);
+            log.FormClosed += (_, _) => AtualizarStatusSincronizacao();
+            log.Show(this);
+        };
+        Controls.Add(_botaoLog);
+        y += 40;
 
         _botaoAbrirChamado.Left = 20;
         _botaoAbrirChamado.Top = y;
@@ -84,7 +103,32 @@ public sealed class PainelForm : Form
 
         Height = y + 54;
 
+        AtualizarStatusSincronizacao();
         Load += async (_, _) => await CarregarSetorAtualAsync();
+    }
+
+    /// <summary>
+    /// Resumo da última tentativa de sincronização (do log local): deixa
+    /// claro, direto no painel, quando o inventário NÃO chegou no GDesk.
+    /// </summary>
+    private void AtualizarStatusSincronizacao()
+    {
+        var ultimo = LogLocal.UltimoResultado();
+        if (ultimo == null)
+        {
+            _rotuloSync.ForeColor = Color.Gray;
+            _rotuloSync.Text = "Sincronização: nenhuma tentativa registrada ainda.";
+        }
+        else if (ultimo.Value.sucesso)
+        {
+            _rotuloSync.ForeColor = Color.DarkGreen;
+            _rotuloSync.Text = "Última sincronização: OK\n" + ultimo.Value.linha[..Math.Min(19, ultimo.Value.linha.Length)];
+        }
+        else
+        {
+            _rotuloSync.ForeColor = Color.Firebrick;
+            _rotuloSync.Text = "Última sincronização FALHOU — não gravou no GDesk. Veja o log.\n" + ultimo.Value.linha[..Math.Min(19, ultimo.Value.linha.Length)];
+        }
     }
 
     private void AbrirChamado()

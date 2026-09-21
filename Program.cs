@@ -219,9 +219,21 @@ if (args.Contains("--teste"))
     return 0;
 }
 
-var config = AgentConfig.Carregar();
-var cliente = new ApiClient(config);
-var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(config));
+bool sucesso;
+string mensagem;
+try
+{
+    var config = AgentConfig.Carregar();
+    var cliente = new ApiClient(config);
+    (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(config));
+}
+catch (Exception ex)
+{
+    // Falha ANTES de falar com o servidor (config ilegível, coleta de inventário quebrou...).
+    LogLocal.Registrar("ERRO", $"Falha antes de enviar ao servidor: {ex.Message} — o inventário NÃO foi gravado no GDesk.");
+    Console.Error.WriteLine($"[GDeskAgent] Falha ao sincronizar: {ex.Message}");
+    return 1;
+}
 
 if (sucesso)
 {

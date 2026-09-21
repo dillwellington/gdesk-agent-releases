@@ -149,6 +149,11 @@ public static class SelfInstaller
 
         Directory.CreateDirectory(Instalacao.Pasta);
 
+        // Pasta de logs: o ícone da bandeja roda como usuário comum e
+        // precisa gravar aqui (S-1-5-32-545 = grupo Users, em qualquer idioma do Windows).
+        Directory.CreateDirectory(LogLocal.PastaLogs);
+        ExecutarComando("icacls.exe", $"\"{LogLocal.PastaLogs}\" /grant *S-1-5-32-545:(OI)(CI)M");
+
         // Environment.ProcessPath (.NET 6+), não
         // Process.GetCurrentProcess().MainModule!.FileName! -- MainModule
         // lança BadImageFormatException (0x8007000B) em apps publicados

@@ -30,6 +30,13 @@ public sealed class ApiClient
 
     public async Task<(bool sucesso, string mensagem)> SincronizarAsync(SincronizarPayload payload)
     {
+        // Falhas antigas que o servidor ainda não sabe (ver LogLocal) vão
+        // junto -- o backend grava com a data/hora original.
+        var pendentes = LogLocal.ObterPendentes();
+        payload.ErrosPendentes = pendentes;
+        var destino = new Uri(_http.BaseAddress!, "agente/sincronizar");
+        LogLocal.Registrar("INFO", $"Iniciando sincronização com {destino} (máquina {payload.Hostname ?? payload.IdentificadorAgente})...");
+
         try
         {
             // ConfigureAwait(false) em toda chamada async daqui pra baixo:
@@ -43,16 +50,42 @@ public sealed class ApiClient
             // de só demorar até o tempo limite da requisição.
             var resposta = await _http.PostAsJsonAsync("agente/sincronizar", payload).ConfigureAwait(false);
             var corpo = await resposta.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var status = (int)resposta.StatusCode;
 
             if (resposta.IsSuccessStatusCode)
             {
+                LogLocal.RemoverPendentes(pendentes.Count);
+                LogLocal.Registrar("OK", "Sincronização concluída: inventário gravado no GDesk." +
+                    (pendentes.Count > 0 ? $" {pendentes.Count} falha(s) anterior(es) enviada(s) ao servidor." : ""));
                 return (true, corpo);
             }
 
-            return (false, ExtrairDetalhe(corpo) ?? $"HTTP {(int)resposta.StatusCode}: {corpo}");
+            var detalhe = ExtrairDetalhe(corpo) ?? $"HTTP {status}: {corpo}";
+
+            // 400/409 (e o 500 já tratado pelo backend) o servidor JÁ
+            // registrou no log do recurso, junto com as pendências que
+            // recebeu -- nesses casos não reenvia nada. Qualquer outra
+            // resposta (401/403, 502/503/504 de proxy, etc.) o servidor
+            // não registrou: guarda aqui pra mandar na próxima vez.
+            var servidorRegistrou = status is 400 or 409
+                || (status == 500 && detalhe.StartsWith("Erro interno ao sincronizar", StringComparison.Ordinal));
+            if (servidorRegistrou)
+            {
+                LogLocal.RemoverPendentes(pendentes.Count);
+            }
+            else
+            {
+                LogLocal.AdicionarPendente("http", $"Servidor respondeu HTTP {status}: {detalhe}");
+            }
+
+            LogLocal.Registrar("ERRO", $"O servidor recusou a sincronização (HTTP {status}): {detalhe} — o inventário NÃO foi gravado no GDesk.");
+            return (false, detalhe);
         }
         catch (Exception ex)
         {
+            var motivo = ex is TaskCanceledException ? "tempo esgotado (servidor não respondeu)" : ex.Message;
+            LogLocal.AdicionarPendente("conexao", $"Sem conexão com o servidor: {motivo}");
+            LogLocal.Registrar("ERRO", $"Não foi possível falar com o servidor: {motivo} — o inventário NÃO foi gravado no GDesk. Nova tentativa na próxima sincronização.");
             return (false, $"Falha de conexão: {ex.Message}");
         }
     }

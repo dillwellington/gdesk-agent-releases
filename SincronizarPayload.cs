@@ -113,6 +113,12 @@ public sealed class SincronizarPayload
 
     [JsonPropertyName("programas_instalados")]
     public List<ProgramaInstaladoPayload> ProgramasInstalados { get; set; } = new();
+
+    // Falhas de sincronização anteriores que o servidor não tinha como
+    // registrar na hora (sem internet etc.) -- ver LogLocal.ObterPendentes.
+    // Espelha app/schemas/agente.py::ErroPendentePayload.
+    [JsonPropertyName("erros_pendentes")]
+    public List<ErroPendente> ErrosPendentes { get; set; } = new();
 }
 
 /// <summary>
