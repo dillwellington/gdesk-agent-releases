@@ -117,6 +117,13 @@ if (args.Contains("--desinstalar"))
     }
 }
 
+if (args.Contains("--aplicar-atualizacao"))
+{
+    // Uso interno: o .exe NOVO baixado por Atualizador.TentarAtualizarAsync
+    // troca o GDeskAgent.exe instalado por si mesmo.
+    return Atualizador.AplicarAtualizacao();
+}
+
 if (args.Contains("--bandeja"))
 {
     // Chamado sozinho pela Tarefa Agendada "GDesk Agente - Bandeja"
@@ -238,6 +245,15 @@ catch (Exception ex)
 if (sucesso)
 {
     Console.WriteLine($"[GDeskAgent] Sincronizado com sucesso: {mensagem}");
+    // Depois de sincronizar, vê se há versão nova (só a tarefa agendada, como administrador, atualiza).
+    try
+    {
+        await Atualizador.TentarAtualizarAsync(AgentConfig.Carregar());
+    }
+    catch (Exception ex)
+    {
+        LogLocal.Registrar("ERRO", $"Falha ao verificar atualização: {ex.Message}");
+    }
     return 0;
 }
 

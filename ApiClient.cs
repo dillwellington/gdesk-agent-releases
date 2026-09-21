@@ -172,6 +172,23 @@ public sealed class ApiClient
         }
     }
 
+    /// <summary>GET /agente/atualizacao: existe versão mais nova do agente? Falha de rede/servidor = null (sem atualizar).</summary>
+    public async Task<InfoAtualizacao?> VerificarAtualizacaoAsync(string versaoAtual)
+    {
+        try
+        {
+            var resposta = await _http.GetAsync($"agente/atualizacao?versao={Uri.EscapeDataString(versaoAtual)}").ConfigureAwait(false);
+            if (!resposta.IsSuccessStatusCode) return null;
+            var corpo = await resposta.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var info = JsonSerializer.Deserialize<InfoAtualizacao>(corpo, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return info != null && info.Atualizar ? info : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Confirma junto do backend se o token é válido para alguma empresa,
     /// sem gravar nada -- chamado pelo instalador antes de configurar a

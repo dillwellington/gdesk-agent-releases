@@ -50,3 +50,12 @@ public sealed class ClienteAgenteItem
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     [JsonPropertyName("nome")] public string Nome { get; set; } = "";
 }
+
+/// <summary>Espelha GET /agente/atualizacao.</summary>
+public sealed class InfoAtualizacao
+{
+    [JsonPropertyName("atualizar")] public bool Atualizar { get; set; }
+    [JsonPropertyName("versao")] public string Versao { get; set; } = "";
+    [JsonPropertyName("url")] public string Url { get; set; } = "";
+    [JsonPropertyName("sha256")] public string Sha256 { get; set; } = "";
+}
