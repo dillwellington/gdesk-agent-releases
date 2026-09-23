@@ -187,7 +187,7 @@ public static class SelfInstaller
         var exeAtual = Environment.ProcessPath!;
         if (!string.Equals(Path.GetFullPath(exeAtual), Path.GetFullPath(Instalacao.CaminhoExe), StringComparison.OrdinalIgnoreCase))
         {
-            File.Copy(exeAtual, Instalacao.CaminhoExe, overwrite: true);
+            CopiarExeComRetentativas(exeAtual, Instalacao.CaminhoExe);
         }
 
         var configJson = JsonSerializer.Serialize(
@@ -508,6 +508,38 @@ public static class SelfInstaller
             }
             catch { /* processo já pode ter encerrado sozinho -- não crítico */ }
         }
+    }
+
+    /// <summary>
+    /// Copia o .exe por cima do já instalado, tentando de novo por até ~30s
+    /// (mesmo padrão de Atualizador.AplicarAtualizacao, que resolve esse
+    /// mesmo tipo de trava na atualização automática) se dar
+    /// UnauthorizedAccessException/IOException. EncerrarOutrosProcessosEmExecucao
+    /// já pede pra matar outras instâncias antes disso, mas o Windows pode
+    /// levar um instante a mais pra soltar de vez o arquivo de um processo
+    /// grande (self-contained, mais de 150 MB) que acabou de ser encerrado
+    /// -- uma única tentativa (o que o código fazia antes) não dava tempo
+    /// suficiente em alguns casos.
+    /// </summary>
+    private static void CopiarExeComRetentativas(string origem, string destino)
+    {
+        Exception? ultimoErro = null;
+        for (var tentativa = 0; tentativa < 20; tentativa++)
+        {
+            try
+            {
+                File.Copy(origem, destino, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                ultimoErro = ex;
+                Thread.Sleep(1500);
+            }
+        }
+        throw new Exception(
+            $"Não foi possível substituir o executável instalado depois de várias tentativas -- ainda em uso por outro processo (bandeja, sincronização em andamento etc.)? Detalhe: {ultimoErro?.Message}",
+            ultimoErro);
     }
 
     private static void RemoverAtalhoMenuIniciar()
