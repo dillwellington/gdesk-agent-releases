@@ -388,7 +388,7 @@ public sealed class SetupForm : Form
             // ANTES de instalar, pra não deixar a máquina instalada sem
             // nunca virar Recurso. Coleta o inventário aqui só pra pegar
             // o número de série e o identificador desta máquina.
-            var (duplicado, mensagemDuplicado) = await Task.Run(async () =>
+            var (duplicado, mensagemDuplicado, recursoIdDuplicado) = await Task.Run(async () =>
             {
                 var inventario = InventoryCollector.Coletar();
                 return await new ApiClient(new AgentConfig { AgentToken = token })
@@ -397,13 +397,48 @@ public sealed class SetupForm : Form
                         inventario.NumeroSerie,
                         inventario.IdentificadorAgente);
             });
+
+            // adotarRecursoId só fica preenchido se o técnico confirmar,
+            // no diálogo abaixo, que é a MESMA máquina física batendo a
+            // duplicidade -- normalmente porque o Windows foi
+            // reinstalado/reimageado nela, o que troca o identificador do
+            // agente (MachineGuid) e faz esta pré-checagem não reconhecer
+            // sozinha que é uma reinstalação. Indo em frente com esse id,
+            // o backend reatribui o Recurso existente pra esta máquina em
+            // vez de recusar por patrimônio/número de série duplicado
+            // (ver ApiClient.SincronizarAsync/SelfInstaller.InstalarComElevacao
+            // e app/routers/agente.py::_sincronizar no backend).
+            string? adotarRecursoId = null;
             if (duplicado)
             {
-                _rotuloErro.ForeColor = Color.Firebrick;
-                _rotuloErro.Text = mensagemDuplicado;
-                _botaoInstalar.Enabled = true;
-                _botaoInstalar.Text = "Instalar";
-                return;
+                if (string.IsNullOrWhiteSpace(recursoIdDuplicado))
+                {
+                    // Duplicidade confirmada mas sem um id pra reatribuir
+                    // (resposta antiga do backend, ou falha ao obter o id) --
+                    // continua bloqueando como antes, sem opção de atualizar.
+                    _rotuloErro.ForeColor = Color.Firebrick;
+                    _rotuloErro.Text = mensagemDuplicado;
+                    _botaoInstalar.Enabled = true;
+                    _botaoInstalar.Text = "Instalar";
+                    return;
+                }
+
+                var resposta = MessageBox.Show(
+                    this,
+                    mensagemDuplicado + "\n\nSe esta for a MESMA máquina física (por exemplo, o Windows foi formatado/reinstalado nela), clique Sim para atualizar o cadastro existente com esta instalação.\n\nSe for outro equipamento com a etiqueta/número de série repetidos por engano, clique Não e corrija o patrimônio antes de instalar.",
+                    "GDesk — máquina já cadastrada",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+                if (resposta != DialogResult.Yes)
+                {
+                    _rotuloErro.ForeColor = Color.Firebrick;
+                    _rotuloErro.Text = mensagemDuplicado;
+                    _botaoInstalar.Enabled = true;
+                    _botaoInstalar.Text = "Instalar";
+                    return;
+                }
+                adotarRecursoId = recursoIdDuplicado;
             }
 
             // Roda a instalação (validação de token + elevação + cópia de
@@ -417,7 +452,8 @@ public sealed class SetupForm : Form
                 _configEmbutida?.ClienteId,
                 string.IsNullOrWhiteSpace(patrimonio) ? null : patrimonio,
                 string.IsNullOrWhiteSpace(numeroLacre) ? null : numeroLacre,
-                setorId));
+                setorId,
+                adotarRecursoId));
 
             if (sincronizouComSucesso)
             {

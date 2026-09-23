@@ -12,6 +12,18 @@ public sealed class SincronizarPayload
     [JsonPropertyName("identificador_agente")]
     public string IdentificadorAgente { get; set; } = "";
 
+    // Preenchido só na primeira sincronização depois que o técnico
+    // confirma, no diálogo do SetupForm, que uma duplicidade acusada por
+    // GET /agente/verificar-duplicidade é a MESMA máquina física sendo
+    // reinstalada (Windows reformatado/reimageado troca o
+    // identificador_agente, que é o MachineGuid do Windows). Nunca é
+    // gravado no appsettings.json -- só existe nesta única chamada (ver
+    // SelfInstaller.SincronizarAgora); o backend reatribui o Recurso
+    // indicado a este identificador_agente em vez de recusar com 409
+    // (ver app/routers/agente.py::_sincronizar).
+    [JsonPropertyName("confirmar_atualizacao_recurso_id")]
+    public string? ConfirmarAtualizacaoRecursoId { get; set; }
+
     [JsonPropertyName("hostname")]
     public string? Hostname { get; set; }
 

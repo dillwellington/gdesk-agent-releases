@@ -50,7 +50,7 @@ public static class SelfInstaller
     /// verdade (token inválido, UAC recusado, etc.) -- ver SetupForm.cs
     /// pra como cada caso vira uma mensagem diferente na tela.
     /// </summary>
-    public static bool InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
+    public static bool InstalarComElevacao(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null, string? adotarRecursoId = null)
     {
         // Valida o token ANTES de pedir elevação de administrador: evita
         // incomodar o usuário com a janela do UAC quando o token já está
@@ -76,7 +76,7 @@ public static class SelfInstaller
         var psi = new ProcessStartInfo
         {
             FileName = exeAtual,
-            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre, setorId),
+            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre, setorId, adotarRecursoId),
             UseShellExecute = true,
             Verb = "runas",
         };
@@ -116,13 +116,14 @@ public static class SelfInstaller
     /// Program.cs pro parser correspondente. Cada valor vai entre aspas
     /// (podem ter espaço, ex.: "Sala 3 - Recepção").
     /// </summary>
-    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre, string? setorId)
+    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre, string? setorId, string? adotarRecursoId = null)
     {
         var argumentos = $"--instalar-elevado \"{token}\"";
         if (!string.IsNullOrWhiteSpace(clienteId)) argumentos += $" --cliente-id \"{clienteId}\"";
         if (!string.IsNullOrWhiteSpace(patrimonio)) argumentos += $" --patrimonio \"{patrimonio}\"";
         if (!string.IsNullOrWhiteSpace(numeroLacre)) argumentos += $" --numero-lacre \"{numeroLacre}\"";
         if (!string.IsNullOrWhiteSpace(setorId)) argumentos += $" --setor-id \"{setorId}\"";
+        if (!string.IsNullOrWhiteSpace(adotarRecursoId)) argumentos += $" --adotar-recurso-id \"{adotarRecursoId}\"";
         return argumentos;
     }
 
@@ -133,7 +134,7 @@ public static class SelfInstaller
     /// vez -- sempre sobrescreve o que já existia.
     /// </summary>
     /// <summary>Devolve true se a primeira sincronização deu certo (ver InstalarComElevacao).</summary>
-    public static bool ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null)
+    public static bool ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null, string? adotarRecursoId = null)
     {
         // Revalida aqui também (mesma checagem de InstalarComElevacao):
         // esta função também é chamada diretamente, sem passar pela tela
@@ -189,7 +190,7 @@ public static class SelfInstaller
         CriarAtalhoMenuIniciar();
         CriarAtalhoAreaTrabalho();
         RegistrarNoPainelDeControle();
-        var sincronizouComSucesso = SincronizarAgora();
+        var sincronizouComSucesso = SincronizarAgora(adotarRecursoId);
         IniciarBandejaAgora();
         return sincronizouComSucesso;
     }
@@ -352,12 +353,19 @@ public static class SelfInstaller
     /// Recurso ainda não apareceu no GDesk); a Tarefa Agendada tenta de
     /// novo sozinha a cada 6 horas.
     /// </summary>
-    private static bool SincronizarAgora()
+    private static bool SincronizarAgora(string? adotarRecursoId = null)
     {
         try
         {
             var config = AgentConfig.Carregar();
-            var resultado = new ApiClient(config).SincronizarAsync(InventoryCollector.ColetarComConfig(config)).GetAwaiter().GetResult();
+            var payload = InventoryCollector.ColetarComConfig(config);
+            // So vem preenchido nesta chamada, vindo de --adotar-recurso-id
+            // (ver ExecutarInstalacaoElevada/InstalarComElevacao/SetupForm) --
+            // nunca gravado em AgentConfig/appsettings.json, porque so faz
+            // sentido na sincronizacao que reatribui o Recurso; depois disso
+            // o identificador_agente ja bate direto (ver Program.cs).
+            if (!string.IsNullOrWhiteSpace(adotarRecursoId)) payload.ConfirmarAtualizacaoRecursoId = adotarRecursoId;
+            var resultado = new ApiClient(config).SincronizarAsync(payload).GetAwaiter().GetResult();
             if (!resultado.sucesso)
             {
                 Console.Error.WriteLine($"[GDeskAgent] Aviso: primeira sincronização falhou ({resultado.mensagem}). Confira o token em Minha Empresa.");
