@@ -148,6 +148,17 @@ public static class SelfInstaller
             throw new Exception(mensagemValidacao);
         }
 
+        // Reinstalação/atualização numa máquina que já tem o agente
+        // rodando: o ícone da bandeja (GDeskAgent.exe --bandeja) fica com
+        // o .exe antigo aberto, e o Windows recusa sobrescrever um
+        // executável em uso mesmo com admin (UnauthorizedAccessException
+        // em File.Copy, mais abaixo) -- só aparecia como "instalação
+        // falhou (código 1)" genérico pra quem clicava Instalar, sem
+        // pista nenhuma da causa real. Mesma função usada em
+        // ExecutarDesinstalacaoElevada; nunca mata o próprio processo
+        // (o que está rodando esta instalação).
+        EncerrarOutrosProcessosEmExecucao();
+
         Directory.CreateDirectory(Instalacao.Pasta);
 
         // Pasta de logs: o ícone da bandeja roda como usuário comum e
@@ -455,10 +466,14 @@ public static class SelfInstaller
 
     /// <summary>
     /// Encerra qualquer outra instância do GDeskAgent.exe rodando nesta
-    /// máquina (o ícone da bandeja, tipicamente) antes de apagar a pasta
-    /// de instalação -- sem isso, o arquivo do .exe da bandeja ficaria em
-    /// uso e a remoção da pasta falharia parcialmente. Nunca encerra o
-    /// próprio processo atual (o que está executando esta desinstalação).
+    /// máquina (o ícone da bandeja, tipicamente). Usada tanto antes de
+    /// apagar a pasta de instalação (ExecutarDesinstalacaoElevada -- sem
+    /// isso, o .exe da bandeja ficaria em uso e a remoção falharia
+    /// parcialmente) quanto antes de sobrescrever o .exe numa
+    /// reinstalação/atualização (ExecutarInstalacaoElevada -- mesmo
+    /// problema: File.Copy por cima de um .exe em execução lança
+    /// UnauthorizedAccessException mesmo com admin). Nunca encerra o
+    /// próprio processo atual (o que está executando esta chamada).
     /// </summary>
     private static void EncerrarOutrosProcessosEmExecucao()
     {
@@ -466,7 +481,16 @@ public static class SelfInstaller
         foreach (var processo in Process.GetProcessesByName("GDeskAgent"))
         {
             if (processo.Id == pidAtual) continue;
-            try { processo.Kill(); }
+            try
+            {
+                processo.Kill();
+                // Espera o processo terminar de verdade (até 2s) antes de
+                // seguir -- Kill() só pede o encerramento; sem esperar, o
+                // handle do .exe pode ainda estar aberto quando o chamador
+                // (ExecutarInstalacaoElevada) tenta sobrescrevê-lo logo em
+                // seguida, voltando a dar UnauthorizedAccessException.
+                processo.WaitForExit(2000);
+            }
             catch { /* processo já pode ter encerrado sozinho -- não crítico */ }
         }
     }
