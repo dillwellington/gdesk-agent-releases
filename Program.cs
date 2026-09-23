@@ -27,7 +27,7 @@ AttachConsole(-1);
 //   GDeskAgent.exe --painel           -> abre o painel do agente (Setor/Subsetor atuais + botão "Abrir chamado") --
 //                                        é o que os atalhos "GDesk Agente" (Menu Iniciar/Área de Trabalho, ver
 //                                        SelfInstaller.CriarAtalho) e o clique no ícone da bandeja abrem.
-//   GDeskAgent.exe --instalar-elevado TOKEN [--cliente-id ID] [--patrimonio "..."] [--numero-lacre "..."] [--setor-id ID] [--adotar-recurso-id ID]
+//   GDeskAgent.exe --instalar-elevado TOKEN [--cliente-id ID] [--patrimonio "..."] [--numero-lacre "..."] [--setor-id ID] [--adotar-recurso-id ID] [--pid-pai N]
 //                                     -> uso interno: reentrada já elevada (UAC ou GPO) que faz a instalação de
 //                                        verdade -- ver SelfInstaller. Os opcionais só fazem sentido vindos de um
 //                                        download personalizado por cliente (ver ConfiguracaoEmbutida.cs) e/ou do
@@ -48,13 +48,16 @@ if (args.Length >= 2 && args[0] == "--instalar-elevado")
         // vêm preenchidos quando o download foi personalizado por
         // cliente (ver ConfiguracaoEmbutida.cs/SetupForm.cs) e/ou o
         // cliente exige etiqueta de patrimônio/número do lacre.
+        var pidPaiTexto = ObterArgumento(args, "--pid-pai");
+        int? pidPai = int.TryParse(pidPaiTexto, out var pidPaiValor) ? pidPaiValor : null;
         var sincronizouComSucesso = SelfInstaller.ExecutarInstalacaoElevada(
             args[1],
             ObterArgumento(args, "--cliente-id"),
             ObterArgumento(args, "--patrimonio"),
             ObterArgumento(args, "--numero-lacre"),
             ObterArgumento(args, "--setor-id"),
-            ObterArgumento(args, "--adotar-recurso-id"));
+            ObterArgumento(args, "--adotar-recurso-id"),
+            pidPai);
 
         // 2 = instalação local OK, mas a primeira sincronização falhou
         // (ver SelfInstaller.SincronizarAgora) -- convenção própria, só

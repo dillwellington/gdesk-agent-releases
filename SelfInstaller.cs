@@ -76,7 +76,7 @@ public static class SelfInstaller
         var psi = new ProcessStartInfo
         {
             FileName = exeAtual,
-            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre, setorId, adotarRecursoId),
+            Arguments = MontarArgumentosInstalacao(token, clienteId, patrimonio, numeroLacre, setorId, adotarRecursoId, Environment.ProcessId),
             UseShellExecute = true,
             Verb = "runas",
         };
@@ -116,7 +116,7 @@ public static class SelfInstaller
     /// Program.cs pro parser correspondente. Cada valor vai entre aspas
     /// (podem ter espaço, ex.: "Sala 3 - Recepção").
     /// </summary>
-    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre, string? setorId, string? adotarRecursoId = null)
+    private static string MontarArgumentosInstalacao(string token, string? clienteId, string? patrimonio, string? numeroLacre, string? setorId, string? adotarRecursoId = null, int? pidPai = null)
     {
         var argumentos = $"--instalar-elevado \"{token}\"";
         if (!string.IsNullOrWhiteSpace(clienteId)) argumentos += $" --cliente-id \"{clienteId}\"";
@@ -124,6 +124,15 @@ public static class SelfInstaller
         if (!string.IsNullOrWhiteSpace(numeroLacre)) argumentos += $" --numero-lacre \"{numeroLacre}\"";
         if (!string.IsNullOrWhiteSpace(setorId)) argumentos += $" --setor-id \"{setorId}\"";
         if (!string.IsNullOrWhiteSpace(adotarRecursoId)) argumentos += $" --adotar-recurso-id \"{adotarRecursoId}\"";
+        // Id deste processo (o que está esperando a instalação elevada
+        // terminar, ver InstalarComElevacao/WaitForExit) -- passado pra
+        // EncerrarOutrosProcessosEmExecucao nunca matar ele mesmo (ver
+        // comentário lá: sem isso, ao reinstalar rodando um .exe baixado
+        // de outro lugar, o processo que mostra a tela SetupForm também
+        // se chama "GDeskAgent" e acabava sendo morto pelo próprio
+        // processo elevado que ele lançou, fechando a janela sem
+        // nenhuma mensagem).
+        if (pidPai.HasValue) argumentos += $" --pid-pai {pidPai.Value}";
         return argumentos;
     }
 
@@ -134,7 +143,7 @@ public static class SelfInstaller
     /// vez -- sempre sobrescreve o que já existia.
     /// </summary>
     /// <summary>Devolve true se a primeira sincronização deu certo (ver InstalarComElevacao).</summary>
-    public static bool ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null, string? adotarRecursoId = null)
+    public static bool ExecutarInstalacaoElevada(string token, string? clienteId = null, string? patrimonio = null, string? numeroLacre = null, string? setorId = null, string? adotarRecursoId = null, int? pidPai = null)
     {
         // Revalida aqui também (mesma checagem de InstalarComElevacao):
         // esta função também é chamada diretamente, sem passar pela tela
@@ -157,7 +166,7 @@ public static class SelfInstaller
         // pista nenhuma da causa real. Mesma função usada em
         // ExecutarDesinstalacaoElevada; nunca mata o próprio processo
         // (o que está rodando esta instalação).
-        EncerrarOutrosProcessosEmExecucao();
+        EncerrarOutrosProcessosEmExecucao(pidPai);
 
         Directory.CreateDirectory(Instalacao.Pasta);
 
@@ -475,12 +484,18 @@ public static class SelfInstaller
     /// UnauthorizedAccessException mesmo com admin). Nunca encerra o
     /// próprio processo atual (o que está executando esta chamada).
     /// </summary>
-    private static void EncerrarOutrosProcessosEmExecucao()
+    private static void EncerrarOutrosProcessosEmExecucao(int? pidPreservar = null)
     {
         var pidAtual = Environment.ProcessId;
         foreach (var processo in Process.GetProcessesByName("GDeskAgent"))
         {
             if (processo.Id == pidAtual) continue;
+            // pidPreservar (só vem de ExecutarInstalacaoElevada -- ver
+            // MontarArgumentosInstalacao) é o processo que lançou esta
+            // instalação e está esperando ela terminar (InstalarComElevacao/
+            // WaitForExit); sem preservar ele, ele também se chama
+            // "GDeskAgent" e seria morto por engano.
+            if (pidPreservar.HasValue && processo.Id == pidPreservar.Value) continue;
             try
             {
                 processo.Kill();
