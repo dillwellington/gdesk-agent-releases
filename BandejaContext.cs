@@ -111,7 +111,7 @@ public sealed class BandejaContext : ApplicationContext
         if (_sincronizando) return;
         try
         {
-            var identificador = InventoryCollector.ObterMachineGuid();
+            var identificador = InventoryCollector.ObterIdentificadorAgente();
             if (string.IsNullOrWhiteSpace(identificador)) return;
             if (!await new ApiClient(_config).ConsultarPedidoSincronizacaoAsync(identificador)) return;
 

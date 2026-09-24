@@ -9,7 +9,8 @@ namespace GDeskAgent;
 /// </summary>
 public sealed class AgentConfig
 {
-    public string ApiBaseUrl { get; set; } = "https://gdesk-backend.onrender.com";
+    public const string ApiBaseUrlPadrao = "https://api.gdeskapp.com.br";
+    public string ApiBaseUrl { get; set; } = ApiBaseUrlPadrao;
     public string AgentToken { get; set; } = "";
     public string PortalUrl { get; set; } = "https://gdeskapp.com.br";
     public int IntervalMinutes { get; set; } = 360;
@@ -96,6 +97,26 @@ public sealed class AgentConfig
         {
             PropertyNameCaseInsensitive = true,
         }) ?? throw new InvalidDataException("appsettings.json inválido (JSON malformado). Reinstale o agente.");
+
+        // 1.9.0: a API saiu do Render e foi para a VPS. Máquinas instaladas
+        // antes têm a URL antiga gravada no appsettings.json -- troca aqui, em
+        // memória, pra valer em todos os processos (tarefa agendada, bandeja,
+        // painel), e tenta regravar o arquivo (só funciona quando o processo
+        // roda como SYSTEM/admin; se falhar, a troca em memória já resolve).
+        if (string.IsNullOrWhiteSpace(config.ApiBaseUrl) ||
+            config.ApiBaseUrl.Contains("onrender.com", StringComparison.OrdinalIgnoreCase))
+        {
+            config.ApiBaseUrl = ApiBaseUrlPadrao;
+            try
+            {
+                var original = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json) ?? new();
+                var atualizado = original.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+                var chaveUrl = atualizado.Keys.FirstOrDefault(k => string.Equals(k, "ApiBaseUrl", StringComparison.OrdinalIgnoreCase)) ?? "ApiBaseUrl";
+                atualizado[chaveUrl] = ApiBaseUrlPadrao;
+                File.WriteAllText(Instalacao.CaminhoConfig, JsonSerializer.Serialize(atualizado, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { /* sem permissão de escrita: segue com a URL nova só em memória */ }
+        }
 
         if (string.IsNullOrWhiteSpace(config.AgentToken))
         {

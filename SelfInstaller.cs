@@ -193,7 +193,7 @@ public static class SelfInstaller
         var configJson = JsonSerializer.Serialize(
             new
             {
-                ApiBaseUrl = "https://gdesk-backend.onrender.com",
+                ApiBaseUrl = AgentConfig.ApiBaseUrlPadrao,
                 AgentToken = token,
                 PortalUrl = "https://gdeskapp.com.br",
                 IntervalMinutes = 360,

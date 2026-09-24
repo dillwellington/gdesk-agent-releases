@@ -12,13 +12,14 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.8.4";
+    public const string VersaoAgente = "1.9.0";
 
     public static SincronizarPayload Coletar()
     {
         var payload = new SincronizarPayload
         {
-            IdentificadorAgente = ObterMachineGuid(),
+            IdentificadorAgente = ObterIdentificadorAgente(),
+            IdentificadorLegado = ObterMachineGuid(),
             Hostname = Environment.MachineName,
             VersaoAgente = VersaoAgente,
             UsuarioLogado = Environment.UserName,
@@ -88,6 +89,78 @@ public static class InventoryCollector
     /// PainelForm.cs e ApiClient.ObterEstadoAsync -- só precisam do
     /// identificador da máquina, não do inventário inteiro).
     /// </summary>
+    private static readonly Lazy<string> _identificadorAgente = new(CalcularIdentificadorAgente);
+
+    /// <summary>
+    /// Identificador da máquina usado pelo GDesk (1.9.0+). Antes era só o
+    /// MachineGuid do Windows -- mas imagens clonadas sem sysprep repetem o
+    /// MachineGuid em várias máquinas, que acabavam disputando um único
+    /// cadastro (nome/setor trocando sozinhos, log misturado). Agora combina
+    /// o MachineGuid com identificadores do HARDWARE (UUID do SMBIOS e
+    /// número de série da BIOS/placa-mãe), que não se repetem entre
+    /// máquinas físicas diferentes. Se nenhum dado de hardware for válido
+    /// (placa genérica), entra também o MAC físico. Formato: "v2-" + 32
+    /// hex (SHA-256 truncado). O MachineGuid continua indo como
+    /// identificador_legado, pro backend migrar o cadastro antigo.
+    /// </summary>
+    public static string ObterIdentificadorAgente() => _identificadorAgente.Value;
+
+    private static string CalcularIdentificadorAgente()
+    {
+        var partes = new List<string> { ObterMachineGuid() };
+        var temHardware = false;
+
+        try
+        {
+            foreach (var produto in Consultar("SELECT UUID FROM Win32_ComputerSystemProduct"))
+            {
+                var uuid = produto["UUID"]?.ToString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(uuid) && !UuidsInvalidos.Contains(uuid))
+                {
+                    partes.Add("uuid:" + uuid.ToUpperInvariant());
+                    temHardware = true;
+                }
+            }
+        }
+        catch { /* segue com o que tiver */ }
+
+        try
+        {
+            foreach (var bios in Consultar("SELECT SerialNumber FROM Win32_BIOS"))
+            {
+                var serial = bios["SerialNumber"]?.ToString()?.Trim();
+                if (!EhSerialInvalido(serial)) { partes.Add("bios:" + serial!.ToUpperInvariant()); temHardware = true; }
+            }
+            foreach (var placa in Consultar("SELECT SerialNumber FROM Win32_BaseBoard"))
+            {
+                var serial = placa["SerialNumber"]?.ToString()?.Trim();
+                if (!EhSerialInvalido(serial)) { partes.Add("placa:" + serial!.ToUpperInvariant()); temHardware = true; }
+            }
+        }
+        catch { /* segue com o que tiver */ }
+
+        if (!temHardware)
+        {
+            try
+            {
+                var macs = new List<string>();
+                foreach (var nic in Consultar("SELECT MACAddress, PNPDeviceID FROM Win32_NetworkAdapter WHERE PhysicalAdapter = TRUE"))
+                {
+                    var mac = nic["MACAddress"]?.ToString()?.Trim();
+                    var pnp = nic["PNPDeviceID"]?.ToString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(mac) && (pnp.StartsWith("PCI\\", StringComparison.OrdinalIgnoreCase) || pnp.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase)))
+                        macs.Add(mac.ToUpperInvariant());
+                }
+                macs.Sort(StringComparer.Ordinal);
+                if (macs.Count > 0) partes.Add("mac:" + macs[0]);
+            }
+            catch { /* sem MAC: fica só o MachineGuid (mesmo comportamento de antes) */ }
+        }
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("|", partes)));
+        return "v2-" + Convert.ToHexString(bytes, 0, 16).ToLowerInvariant();
+    }
+
     public static string ObterMachineGuid()
     {
         try

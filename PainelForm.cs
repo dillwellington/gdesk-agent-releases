@@ -162,7 +162,7 @@ public sealed class PainelForm : Form
     /// </summary>
     private async Task CarregarSetorAtualAsync()
     {
-        var identificador = InventoryCollector.ObterMachineGuid();
+        var identificador = InventoryCollector.ObterIdentificadorAgente();
         var (sucesso, estado, mensagem) = await new ApiClient(_config).ObterEstadoAsync(identificador);
 
         if (!sucesso || estado == null)

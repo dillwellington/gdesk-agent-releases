@@ -18,7 +18,7 @@ namespace GDeskAgent;
 public sealed class CadastroForm : Form
 {
     private readonly AgentConfig _config;
-    private readonly string _identificador = InventoryCollector.ObterMachineGuid();
+    private readonly string _identificador = InventoryCollector.ObterIdentificadorAgente();
 
     private readonly TextBox _campoEmail = new() { Left = 20, Width = 340, PlaceholderText = "E-mail do usuário agente/administrador" };
     private readonly TextBox _campoSenha = new() { Left = 20, Width = 340, UseSystemPasswordChar = true, PlaceholderText = "Senha" };

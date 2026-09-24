@@ -12,6 +12,12 @@ public sealed class SincronizarPayload
     [JsonPropertyName("identificador_agente")]
     public string IdentificadorAgente { get; set; } = "";
 
+    // 1.9.0+: o identificador antigo (só o MachineGuid do Windows), usado
+    // pelo backend uma única vez pra migrar o cadastro existente pro
+    // identificador novo por hardware (ver InventoryCollector.ObterIdentificadorAgente).
+    [JsonPropertyName("identificador_legado")]
+    public string? IdentificadorLegado { get; set; }
+
     // Preenchido só na primeira sincronização depois que o técnico
     // confirma, no diálogo do SetupForm, que uma duplicidade acusada por
     // GET /agente/verificar-duplicidade é a MESMA máquina física sendo
