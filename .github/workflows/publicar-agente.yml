@@ -1,0 +1,130 @@
+# Publica o GDeskAgent.exe automaticamente.
+#
+# Fluxo: mudou o <Version> no GDeskAgent.csproj e deu push na main ->
+#   1. compila o .exe (Windows, .NET 8, single-file self-contained)
+#   2. calcula o SHA-256
+#   3. sobe GDeskAgent.exe + agente.json ({versao, sha256}) na release
+#      "agente-latest" (a mesma que o botão "Baixar agente" e a
+#      atualização automática usam)
+#   4. cria também uma release "agente-vX.Y.Z" (histórico / voltar versão)
+#
+# O backend lê o agente.json (ver app/routers/agente.py::_versao_publicada
+# no gdesk-backend) -- não precisa mais mexer em AGENTE_VERSAO_ATUAL /
+# AGENTE_SHA256 no Coolify.
+#
+# Se a versão do .csproj já estiver publicada, não faz nada (push só de
+# código sem subir a versão não gera release). "Run workflow" manual com
+# forcar=true republica mesmo assim.
+name: Publicar agente
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.cs"
+      - "*.csproj"
+      - "Assets/**"
+      - ".github/workflows/publicar-agente.yml"
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: "Republicar mesmo se a versão já estiver publicada"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-agente
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG_LATEST: agente-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ler versão do .csproj e comparar com a publicada
+        id: versao
+        shell: pwsh
+        run: |
+          [xml]$proj = Get-Content GDeskAgent.csproj
+          $v = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if (-not $v) { throw "<Version> não encontrado no GDeskAgent.csproj" }
+          $v = $v.Trim()
+          "versao=$v" >> $env:GITHUB_OUTPUT
+
+          $publicada = ""
+          gh release download $env:TAG_LATEST -p agente.json -D $env:RUNNER_TEMP --clobber 2>$null
+          $arq = Join-Path $env:RUNNER_TEMP "agente.json"
+          if (Test-Path $arq) { $publicada = (Get-Content $arq -Raw | ConvertFrom-Json).versao }
+          Write-Host "Versão no .csproj: $v | publicada: $publicada"
+
+          $forcar = "${{ github.event.inputs.forcar }}" -eq "true"
+          if ($publicada -eq $v -and -not $forcar) {
+            Write-Host "Versão $v já publicada -- nada a fazer."
+            "pular=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "pular=false" >> $env:GITHUB_OUTPUT
+          }
+          # gh release download falha (exit 1) quando ainda não existe
+          # agente.json -- não pode derrubar o passo.
+          $global:LASTEXITCODE = 0
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.versao.outputs.pular == 'false'
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compilar
+        if: steps.versao.outputs.pular == 'false'
+        shell: pwsh
+        run: dotnet publish GDeskAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publicar
+
+      - name: Gerar agente.json (versão + SHA-256)
+        if: steps.versao.outputs.pular == 'false'
+        shell: pwsh
+        run: |
+          $exe = "publicar\GDeskAgent.exe"
+          if (-not (Test-Path $exe)) { throw "GDeskAgent.exe não foi gerado" }
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          [ordered]@{
+            versao       = "${{ steps.versao.outputs.versao }}"
+            sha256       = $sha
+            publicado_em = (Get-Date).ToUniversalTime().ToString("o")
+            commit       = "$env:GITHUB_SHA"
+          } | ConvertTo-Json | Set-Content publicar\agente.json -Encoding utf8NoBOM
+          Get-Content publicar\agente.json
+
+      - name: Publicar na release agente-latest
+        if: steps.versao.outputs.pular == 'false'
+        shell: pwsh
+        run: |
+          gh release view $env:TAG_LATEST *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG_LATEST --title "GDesk Agente (última versão)" --notes "Sempre a versão mais recente do agente. Publicada automaticamente pelo GitHub Actions."
+          }
+          # .exe PRIMEIRO, agente.json DEPOIS: no intervalo entre os dois, o
+          # agente.json antigo continua dizendo a versão anterior, então
+          # nenhuma máquina tenta atualizar com hash errado.
+          gh release upload $env:TAG_LATEST publicar\GDeskAgent.exe --clobber
+          if ($LASTEXITCODE -ne 0) { throw "falha ao subir o .exe" }
+          gh release upload $env:TAG_LATEST publicar\agente.json --clobber
+          if ($LASTEXITCODE -ne 0) { throw "falha ao subir o agente.json" }
+
+      - name: Criar release de histórico (agente-vX.Y.Z)
+        if: steps.versao.outputs.pular == 'false'
+        shell: pwsh
+        run: |
+          $tag = "agente-v${{ steps.versao.outputs.versao }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag publicar\GDeskAgent.exe publicar\agente.json --clobber
+          } else {
+            gh release create $tag publicar\GDeskAgent.exe publicar\agente.json --target "$env:GITHUB_SHA" --title "GDesk Agente ${{ steps.versao.outputs.versao }}" --notes "Commit $env:GITHUB_SHA"
+          }
+          exit 0

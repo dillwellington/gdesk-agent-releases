@@ -12,7 +12,16 @@ namespace GDeskAgent;
 /// </summary>
 public static class InventoryCollector
 {
-    public const string VersaoAgente = "1.9.0";
+    // Versão vem SÓ do <Version> do GDeskAgent.csproj (fonte única -- é
+    // dela que o GitHub Actions publica a release; ver
+    // .github/workflows/publicar-agente.yml). Formato "maior.menor.patch".
+    public static readonly string VersaoAgente = ObterVersaoDoAssembly();
+
+    private static string ObterVersaoDoAssembly()
+    {
+        var v = typeof(InventoryCollector).Assembly.GetName().Version;
+        return v == null ? "0.0.0" : $"{v.Major}.{v.Minor}.{Math.Max(v.Build, 0)}";
+    }
 
     public static SincronizarPayload Coletar()
     {

@@ -385,6 +385,8 @@ public static class SelfInstaller
             // sentido na sincronizacao que reatribui o Recurso; depois disso
             // o identificador_agente ja bate direto (ver Program.cs).
             if (!string.IsNullOrWhiteSpace(adotarRecursoId)) payload.ConfirmarAtualizacaoRecursoId = adotarRecursoId;
+            // GDesk Remoto: já instala o cliente de acesso remoto na instalação do agente.
+            RemotoAcesso.Preparar(config, payload);
             var resultado = new ApiClient(config).SincronizarAsync(payload).GetAwaiter().GetResult();
             if (!resultado.sucesso)
             {
@@ -467,6 +469,7 @@ public static class SelfInstaller
         ExecutarComando("schtasks.exe", $"/Delete /TN \"{NomeTarefaBandeja}\" /F");
 
         EncerrarOutrosProcessosEmExecucao();
+        RemotoAcesso.DesinstalarSeInstaladoPeloAgente();
         RemoverAtalhoMenuIniciar();
         RemoverAtalhoAreaTrabalho();
         RemoverDoPainelDeControle();

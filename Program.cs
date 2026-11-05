@@ -236,7 +236,11 @@ try
 {
     var config = AgentConfig.Carregar();
     var cliente = new ApiClient(config);
-    (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(config));
+    var payload = InventoryCollector.ColetarComConfig(config);
+    // GDesk Remoto: instala/configura o cliente de acesso remoto e manda ID
+    // + senha junto (só como admin/SYSTEM -- a Tarefa Agendada; best-effort).
+    await RemotoAcesso.PrepararAsync(config, payload);
+    (sucesso, mensagem) = await cliente.SincronizarAsync(payload);
 }
 catch (Exception ex)
 {

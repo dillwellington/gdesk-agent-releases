@@ -172,6 +172,21 @@ public sealed class ApiClient
         }
     }
 
+    /// <summary>GET /agente/remoto/config: servidor/chave/instalador do GDesk Remoto. Falha = null (não mexe em nada).</summary>
+    public async Task<ConfigRemoto?> ObterConfigRemotoAsync()
+    {
+        try
+        {
+            var resposta = await _http.GetAsync("agente/remoto/config").ConfigureAwait(false);
+            if (!resposta.IsSuccessStatusCode) return null;
+            return await resposta.Content.ReadFromJsonAsync<ConfigRemoto>().ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>GET /agente/atualizacao: existe versão mais nova do agente? Falha de rede/servidor = null (sem atualizar).</summary>
     public async Task<InfoAtualizacao?> VerificarAtualizacaoAsync(string versaoAtual)
     {

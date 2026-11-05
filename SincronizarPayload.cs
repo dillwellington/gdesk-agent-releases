@@ -129,6 +129,17 @@ public sealed class SincronizarPayload
     [JsonPropertyName("versao_agente")]
     public string? VersaoAgente { get; set; }
 
+    // GDesk Remoto (1.10.0+) -- preenchidos por RemotoAcesso.Preparar só
+    // quando o agente roda como administrador/SYSTEM; null = backend não mexe.
+    [JsonPropertyName("remoto_id")]
+    public string? RemotoId { get; set; }
+
+    [JsonPropertyName("remoto_senha")]
+    public string? RemotoSenha { get; set; }
+
+    [JsonPropertyName("remoto_versao")]
+    public string? RemotoVersao { get; set; }
+
     [JsonPropertyName("programas_instalados")]
     public List<ProgramaInstaladoPayload> ProgramasInstalados { get; set; } = new();
 
