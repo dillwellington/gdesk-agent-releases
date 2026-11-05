@@ -22,6 +22,9 @@ public sealed class ConfigRemoto
     // Nome da pasta/exe em Program Files. "RustDesk" com o cliente oficial;
     // na fase 3 (build próprio) vira o nome do nosso app.
     [JsonPropertyName("app_nome")] public string? AppNome { get; set; }
+    // Segundos para o usuário da máquina aceitar/recusar o acesso antes de
+    // conectar sozinho (0 = conecta direto). Configurado por empresa no GDesk.
+    [JsonPropertyName("confirmar_segundos")] public int? ConfirmarSegundos { get; set; }
 }
 
 /// <summary>
@@ -129,6 +132,8 @@ public static class RemotoAcesso
             DefinirOpcao(exe, "custom-rendezvous-server", cfg.Servidor!);
             DefinirOpcao(exe, "relay-server", cfg.Servidor!);
             DefinirOpcao(exe, "key", cfg.Chave!);
+            if (cfg.ConfirmarSegundos is int segundos)
+                DefinirOpcao(exe, "gdesk-confirmar-segundos", Math.Clamp(segundos, 0, 120).ToString());
 
             // Senha NOVA a cada sincronização completa (a cada 6h ou quando o
             // GDesk pede): uma senha que alguém tenha anotado perde a validade

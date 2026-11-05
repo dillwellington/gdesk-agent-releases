@@ -7,7 +7,10 @@
     já instalado e reinstala por cima com a versão mais nova publicada
     (release agente-latest do GitHub, conferida por SHA-256).
 
-    - Máquina SEM agente instalado: não faz nada.
+    - Máquina SEM agente instalado: só instala se receber -Token (token da
+      empresa, em Minha Empresa > Token do Agente). Opcionais: -ClienteId e
+      -SetorId (ids do GDesk) pra já cair no cliente/setor certos. Sem
+      -Token, não faz nada nessas máquinas.
     - Agente já na versão mais nova (ou mais nova que a publicada): não faz nada.
     - Precisa rodar como administrador/SYSTEM.
     - Log: C:\ProgramData\GDeskAgent\atualizar-agente.log
@@ -16,10 +19,17 @@
       * GPO (domínio): Configuração do Computador > Políticas > Configurações
         do Windows > Scripts > Inicialização > aba "Scripts do PowerShell" >
         Adicionar este .ps1. Roda no próximo boot de cada máquina (como SYSTEM).
+        Pra também INSTALAR onde não tem, preencha "Parâmetros do script" com:
+          -Token SEU_TOKEN [-ClienteId ID_DO_CLIENTE] [-SetorId ID_DO_SETOR]
       * Ferramenta de gerenciamento (PDQ, Intune, RMM...): rodar como SYSTEM.
       * Manual numa máquina: PowerShell como administrador:
           powershell -ExecutionPolicy Bypass -File .\Atualizar-Agente.ps1
 #>
+param(
+    [string]$Token,
+    [string]$ClienteId,
+    [string]$SetorId
+)
 $ErrorActionPreference = 'Stop'
 $pasta    = Join-Path $env:ProgramData 'GDeskAgent'
 $exe      = Join-Path $pasta 'GDeskAgent.exe'
@@ -39,7 +49,8 @@ function Versao([string]$texto) {
 }
 
 try {
-    if (-not (Test-Path $config)) { exit 0 }   # agente não instalado nesta máquina
+    $instalado = Test-Path $config
+    if (-not $instalado -and -not $Token) { exit 0 }   # sem agente e sem token: nada a fazer
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     # O GitHub entrega o .json como application/octet-stream: no PowerShell 5.1
@@ -48,10 +59,11 @@ try {
     if ($bruto -is [byte[]]) { $bruto = [Text.Encoding]::UTF8.GetString($bruto) }
     $manifesto = $bruto | ConvertFrom-Json
     $publicada = Versao $manifesto.versao
-    $instalada = if (Test-Path $exe) { Versao (Get-Item $exe).VersionInfo.ProductVersion } else { [version]'0.0.0' }
-    if ($instalada -ge $publicada) { exit 0 }
+    $instalada = if ($instalado -and (Test-Path $exe)) { Versao (Get-Item $exe).VersionInfo.ProductVersion } else { [version]'0.0.0' }
+    if ($instalado -and $instalada -ge $publicada) { exit 0 }
 
-    Registrar "Atualizando agente $instalada -> $publicada..."
+    if ($instalado) { Registrar "Atualizando agente $instalada -> $publicada..." }
+    else { New-Item -ItemType Directory -Force -Path $pasta | Out-Null; Registrar "Instalando agente $publicada (máquina sem agente)..." }
     $temp = Join-Path $env:TEMP "GDeskAgent-$($manifesto.versao).exe"
     Invoke-WebRequest -Uri "$base/GDeskAgent.exe" -OutFile $temp -UseBasicParsing
     $hash = (Get-FileHash $temp -Algorithm SHA256).Hash.ToLower()
@@ -60,8 +72,13 @@ try {
         throw "SHA-256 do download não confere ($hash) -- nada foi alterado."
     }
 
-    $cfg = Get-Content $config -Raw | ConvertFrom-Json
-    if (-not $cfg.AgentToken) { throw "appsettings.json sem AgentToken -- nada foi alterado." }
+    if ($instalado) {
+        $cfg = Get-Content $config -Raw | ConvertFrom-Json
+        if (-not $cfg.AgentToken) { throw "appsettings.json sem AgentToken -- nada foi alterado." }
+    } else {
+        # Instalação nova: dados vindos dos parâmetros do script.
+        $cfg = [pscustomobject]@{ AgentToken = $Token; ClienteId = $ClienteId; SetorId = $SetorId; Patrimonio = $null; NumeroLacre = $null }
+    }
     $argumentos = "--instalar-elevado `"$($cfg.AgentToken)`""
     if ($cfg.ClienteId)   { $argumentos += " --cliente-id `"$($cfg.ClienteId)`"" }
     if ($cfg.SetorId)     { $argumentos += " --setor-id `"$($cfg.SetorId)`"" }
@@ -72,7 +89,7 @@ try {
     Remove-Item $temp -Force -ErrorAction SilentlyContinue
     # 0 = ok; 2 = instalou mas a 1ª sincronização falhou (a tarefa tenta de novo sozinha)
     if ($processo.ExitCode -eq 0 -or $processo.ExitCode -eq 2) {
-        Registrar "Agente atualizado para $publicada (código $($processo.ExitCode))."
+        Registrar "Agente $publicada instalado/atualizado (código $($processo.ExitCode))."
     } else {
         Registrar "Falha ao instalar a versão $publicada (código $($processo.ExitCode))."
     }
