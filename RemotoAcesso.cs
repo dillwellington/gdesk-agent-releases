@@ -53,6 +53,10 @@ public static class RemotoAcesso
         // também remove). Máquina que já tinha RustDesk antes fica false.
         public bool InstaladoPeloAgente { get; set; }
         public string? AppNome { get; set; }
+        // SHA-256 do instalador usado na última instalação. Build novo do
+        // GDesk Remoto pode sair com a MESMA versão (1.5.1) -- é o hash
+        // diferente no remoto.json que dispara a atualização.
+        public string? InstaladorSha256 { get; set; }
     }
 
     /// <summary>Versão síncrona pra SelfInstaller.SincronizarAgora (já roda sync-over-async lá).</summary>
@@ -81,8 +85,10 @@ public static class RemotoAcesso
             var anteriorInstaladoPeloAgente = estado.InstaladoPeloAgente;
 
             var versaoInstalada = VersaoInstalada(exe);
+            var shaNovo = (cfg.InstaladorSha256 ?? "").Trim().ToLowerInvariant();
             var precisaInstalar = versaoInstalada == null
-                || (!string.IsNullOrWhiteSpace(cfg.InstaladorVersao) && !VersaoIgual(versaoInstalada, cfg.InstaladorVersao!));
+                || (!string.IsNullOrWhiteSpace(cfg.InstaladorVersao) && !VersaoIgual(versaoInstalada, cfg.InstaladorVersao!))
+                || (shaNovo.Length == 64 && !string.Equals(estado.InstaladorSha256, shaNovo, StringComparison.OrdinalIgnoreCase));
             if (precisaInstalar)
             {
                 if (string.IsNullOrWhiteSpace(cfg.InstaladorUrl)) return;
@@ -97,6 +103,7 @@ public static class RemotoAcesso
                 }
                 if (versaoInstalada == null) estado.InstaladoPeloAgente = true;
                 estado.AppNome = appNome;
+                if (shaNovo.Length == 64) estado.InstaladorSha256 = shaNovo;
                 GravarEstado(estado);
 
                 // Trocou de app (RustDesk -> GDeskRemoto): remove o antigo, mas
@@ -123,14 +130,23 @@ public static class RemotoAcesso
             DefinirOpcao(exe, "relay-server", cfg.Servidor!);
             DefinirOpcao(exe, "key", cfg.Chave!);
 
+            // Senha NOVA a cada sincronização completa (a cada 6h ou quando o
+            // GDesk pede): uma senha que alguém tenha anotado perde a validade
+            // logo. Sessões já abertas não caem com a troca. Se a troca falhar,
+            // segue com a senha anterior (que continua valendo na máquina).
+            var novaSenha = GerarSenha(16);
+            var saidaSenha = Executar(exe, $"--password {novaSenha}", TimeSpan.FromSeconds(30));
+            if (saidaSenha.Contains("Done", StringComparison.OrdinalIgnoreCase))
+            {
+                estado.Senha = novaSenha;
+            }
+            else
+            {
+                LogLocal.Registrar("ERRO", $"GDesk Remoto: não consegui trocar a senha ({saidaSenha.Trim()}).");
+            }
             if (string.IsNullOrWhiteSpace(estado.Senha))
             {
-                estado.Senha = GerarSenha(16);
-            }
-            var saidaSenha = Executar(exe, $"--password {estado.Senha}", TimeSpan.FromSeconds(30));
-            if (!saidaSenha.Contains("Done", StringComparison.OrdinalIgnoreCase))
-            {
-                LogLocal.Registrar("ERRO", $"GDesk Remoto: não consegui definir a senha fixa ({saidaSenha.Trim()}).");
+                return;
             }
 
             var id = ObterId(exe, appNome);

@@ -48,7 +48,11 @@ public sealed class BandejaContext : ApplicationContext
         // gerar rajada quando muitos agentes sobem juntos).
         _timerPedido = new System.Windows.Forms.Timer { Interval = 5 * 60 * 1000 + Random.Shared.Next(0, 60_000) };
         _timerPedido.Tick += async (_, _) => await VerificarPedidoAsync();
-        _timerPedido.Start();
+        // 1.10.2+: o pedido do sistema é atendido pela Tarefa Agendada (SYSTEM,
+        // a cada 10 min -- ver AgendamentoSync.cs), que faz a sincronização
+        // COMPLETA (inclui instalar/trocar o GDesk Remoto). Se a bandeja
+        // atendesse antes, como usuário comum, ela "consumiria" o pedido sem
+        // poder fazer essa parte. Timer mantido desligado.
 
         // Clique esquerdo (único) abre o Painel -- o botão direito já abre
         // o menu de contexto sozinho, sem precisar de handler nenhum aqui.

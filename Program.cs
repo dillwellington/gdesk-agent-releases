@@ -23,6 +23,7 @@ AttachConsole(-1);
 //                                        no login do Windows -- ver SelfInstaller.RegistrarTarefaBandeja e
 //                                        BandejaContext. Não é pra ser chamado manualmente (mas não tem problema
 //                                        rodar -- só mostra o ícone com o menu de sempre).
+//   GDeskAgent.exe --forcar          -> sincronização completa agora, sem esperar as 6h nem pedido do GDesk.
 //   GDeskAgent.exe --teste            -> só coleta e imprime o inventário no console, sem enviar nada (debug local).
 //   GDeskAgent.exe --painel           -> abre o painel do agente (Setor/Subsetor atuais + botão "Abrir chamado") --
 //                                        é o que os atalhos "GDesk Agente" (Menu Iniciar/Área de Trabalho, ver
@@ -230,6 +231,21 @@ if (args.Contains("--teste"))
     return 0;
 }
 
+// Tarefa Agendada (a cada 10 min, 1.10.2+): sincronização completa só a
+// cada 6h ou quando o GDesk pede -- ver AgendamentoSync.cs.
+AgendamentoSync.GarantirTarefaAtualizada();
+if (!args.Contains("--forcar"))
+{
+    try
+    {
+        if (!await AgendamentoSync.PrecisaSincronizarAsync(AgentConfig.Carregar())) return 0;
+    }
+    catch
+    {
+        // config ilegível etc. -- deixa a sincronização abaixo registrar o erro
+    }
+}
+
 bool sucesso;
 string mensagem;
 try
@@ -252,6 +268,7 @@ catch (Exception ex)
 
 if (sucesso)
 {
+    AgendamentoSync.RegistrarCompleta();
     Console.WriteLine($"[GDeskAgent] Sincronizado com sucesso: {mensagem}");
     // Depois de sincronizar, vê se há versão nova (só a tarefa agendada, como administrador, atualiza).
     try

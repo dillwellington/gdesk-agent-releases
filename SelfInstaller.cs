@@ -247,16 +247,21 @@ public static class SelfInstaller
         return new ApiClient(configValidacao).ValidarTokenAsync().GetAwaiter().GetResult();
     }
 
-    private static void RegistrarTarefaAgendada()
+    internal static void RegistrarTarefaAgendada(bool apagarAntes = true)
     {
         // Remove uma tarefa anterior primeiro (reinstalação/atualização de
-        // versão) -- schtasks /Create sozinho falharia se já existisse.
-        ExecutarComando("schtasks.exe", $"/Delete /TN \"{NomeTarefaAgendada}\" /F");
+        // versão). Quando chamada DE DENTRO da própria tarefa (atualização da
+        // tarefa, ver AgendamentoSync.GarantirTarefaAtualizada) não apaga --
+        // o /Create com /F sobrescreve do mesmo jeito.
+        if (apagarAntes) ExecutarComando("schtasks.exe", $"/Delete /TN \"{NomeTarefaAgendada}\" /F");
 
         var horaAtual = DateTime.Now.ToString("HH:mm");
         var argumentos =
             $"/Create /TN \"{NomeTarefaAgendada}\" /TR \"\\\"{Instalacao.CaminhoExe}\\\"\" " +
-            $"/SC HOURLY /MO 6 /ST {horaAtual} /RU SYSTEM /RL HIGHEST /F";
+            $"/SC MINUTE /MO 10 /ST {horaAtual} /RU SYSTEM /RL HIGHEST /F";
+        // 10 min (não mais 6h): a execução quase sempre só pergunta "tem
+        // pedido?" e sai -- a sincronização completa continua a cada 6h ou
+        // quando o GDesk pede (ver AgendamentoSync.cs).
         ExecutarComando("schtasks.exe", argumentos);
     }
 
@@ -388,6 +393,7 @@ public static class SelfInstaller
             // GDesk Remoto: já instala o cliente de acesso remoto na instalação do agente.
             RemotoAcesso.Preparar(config, payload);
             var resultado = new ApiClient(config).SincronizarAsync(payload).GetAwaiter().GetResult();
+            if (resultado.sucesso) AgendamentoSync.RegistrarCompleta();
             if (!resultado.sucesso)
             {
                 Console.Error.WriteLine($"[GDeskAgent] Aviso: primeira sincronização falhou ({resultado.mensagem}). Confira o token em Minha Empresa.");
