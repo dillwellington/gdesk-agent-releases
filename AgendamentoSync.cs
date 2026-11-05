@@ -54,6 +54,49 @@ public static class AgendamentoSync
         }
     }
 
+    /// <summary>
+    /// 1.10.3+: o ícone da bandeja pode sumir (atualização do agente fecha o
+    /// processo e a reabertura falha, alguém fecha no Gerenciador de Tarefas,
+    /// travamento...) e só voltava no próximo logon. A tarefa SYSTEM, a cada
+    /// 10 min, confere: tem usuário logado (explorer.exe numa sessão
+    /// interativa) e nenhum GDeskAgent rodando nessa sessão? Então dispara a
+    /// tarefa "GDesk Agente - Bandeja" de novo.
+    /// </summary>
+    public static void GarantirBandeja()
+    {
+        if (!EhAdministrador()) return;
+        try
+        {
+            var sessoesComUsuario = System.Diagnostics.Process.GetProcessesByName("explorer")
+                .Select(p => { try { return p.SessionId; } catch { return 0; } })
+                .Where(id => id > 0)
+                .ToHashSet();
+            if (sessoesComUsuario.Count == 0) return;
+            var sessoesComBandeja = System.Diagnostics.Process.GetProcessesByName("GDeskAgent")
+                .Select(p => { try { return p.SessionId; } catch { return 0; } })
+                .Where(id => id > 0)
+                .ToHashSet();
+            if (sessoesComUsuario.All(sessoesComBandeja.Contains)) return;
+
+            // No máximo 1 tentativa por hora (ex.: máquina com outro usuário
+            // logado, pra quem a tarefa da bandeja não roda -- não fica
+            // tentando e enchendo o log a cada 10 min).
+            var marcador = Path.Combine(Instalacao.Pasta, "bandeja-reaberta.txt");
+            if (File.Exists(marcador) && DateTime.UtcNow - File.GetLastWriteTimeUtc(marcador) < TimeSpan.FromHours(1)) return;
+            File.WriteAllText(marcador, DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+
+            using var processo = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "schtasks.exe", "/Run /TN \"GDesk Agente - Bandeja\"")
+            { UseShellExecute = false, CreateNoWindow = true });
+            processo?.WaitForExit(15000);
+            LogLocal.Registrar("INFO", "Ícone da bandeja não estava aberto -- reaberto.");
+        }
+        catch (Exception ex)
+        {
+            LogLocal.Registrar("ERRO", $"Não consegui reabrir o ícone da bandeja: {ex.Message}");
+        }
+    }
+
     public static async Task<bool> PrecisaSincronizarAsync(AgentConfig config)
     {
         var ultima = LerUltimaCompleta();

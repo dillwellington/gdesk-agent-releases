@@ -234,6 +234,7 @@ if (args.Contains("--teste"))
 // Tarefa Agendada (a cada 10 min, 1.10.2+): sincronização completa só a
 // cada 6h ou quando o GDesk pede -- ver AgendamentoSync.cs.
 AgendamentoSync.GarantirTarefaAtualizada();
+AgendamentoSync.GarantirBandeja();
 if (!args.Contains("--forcar"))
 {
     try
