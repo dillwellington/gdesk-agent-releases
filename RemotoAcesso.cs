@@ -75,6 +75,10 @@ public static class RemotoAcesso
             var exe = CaminhoExe(appNome);
             GarantirPastaProtegida();
             var estado = LerEstado() ?? new Estado();
+            // App que o agente tinha instalado antes (ex.: "RustDesk" oficial,
+            // antes da troca pro "GDeskRemoto" -- ver AppNome no remoto.json).
+            var appAnterior = estado.AppNome;
+            var anteriorInstaladoPeloAgente = estado.InstaladoPeloAgente;
 
             var versaoInstalada = VersaoInstalada(exe);
             var precisaInstalar = versaoInstalada == null
@@ -93,6 +97,21 @@ public static class RemotoAcesso
                 }
                 if (versaoInstalada == null) estado.InstaladoPeloAgente = true;
                 estado.AppNome = appNome;
+                GravarEstado(estado);
+
+                // Trocou de app (RustDesk -> GDeskRemoto): remove o antigo, mas
+                // só se foi o próprio agente que instalou ele.
+                if (!string.IsNullOrWhiteSpace(appAnterior)
+                    && !string.Equals(appAnterior, appNome, StringComparison.OrdinalIgnoreCase)
+                    && anteriorInstaladoPeloAgente)
+                {
+                    var exeAnterior = CaminhoExe(appAnterior!);
+                    if (File.Exists(exeAnterior))
+                    {
+                        LogLocal.Registrar("INFO", $"GDesk Remoto: removendo o cliente anterior ({appAnterior}).");
+                        Executar(exeAnterior, "--uninstall", TimeSpan.FromMinutes(2));
+                    }
+                }
                 // Dá tempo do serviço subir antes de mandar --option/--password (falam com ele via IPC).
                 await Task.Delay(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
                 versaoInstalada = VersaoInstalada(exe);
