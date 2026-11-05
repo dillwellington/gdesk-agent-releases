@@ -36,7 +36,7 @@ public sealed class PainelForm : Form
     {
         _config = config;
 
-        Text = "GDesk Agente";
+        Text = $"GDesk Agente {InventoryCollector.VersaoAgente}";
         Width = 380;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -47,7 +47,7 @@ public sealed class PainelForm : Form
 
         var rotuloTitulo = new Label
         {
-            Text = "GDesk Agente",
+            Text = $"GDesk Agente — versão {InventoryCollector.VersaoAgente}",
             AutoSize = true,
             Left = 20,
             Top = y,

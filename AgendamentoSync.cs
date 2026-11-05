@@ -10,6 +10,7 @@ namespace GDeskAgent;
 ///   - passou 6h desde a última completa que deu certo, ou
 ///   - o GDesk pediu ("Sincronizar agora" / "Sincronizar todos" na tela de
 ///     Recursos -- GET /agente/pedido-sincronizacao), ou
+///   - é a primeira execução depois de ligar o computador (1.10.4+), ou
 ///   - o agente foi chamado com --forcar.
 /// No resto das execuções só pergunta ao servidor se há pedido e sai.
 /// </summary>
@@ -101,6 +102,16 @@ public static class AgendamentoSync
     {
         var ultima = LerUltimaCompleta();
         if (ultima == null || DateTime.UtcNow - ultima.Value >= IntervaloCompleto) return true;
+        // 1.10.4+: primeira execução depois de LIGAR o computador sempre faz a
+        // sincronização completa (inclui verificar/instalar atualização do
+        // agente e do GDesk Remoto) -- máquina que ficou desligada não espera
+        // fechar as 6h pra se atualizar.
+        var ligadoEm = DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+        if (ultima.Value < ligadoEm)
+        {
+            LogLocal.Registrar("INFO", "Primeira verificação desde que o computador foi ligado: sincronização completa.");
+            return true;
+        }
         try
         {
             var identificador = InventoryCollector.ObterIdentificadorAgente();

@@ -39,7 +39,7 @@ public sealed class BandejaContext : ApplicationContext
         _icone = new NotifyIcon
         {
             Icon = CarregarIconeApp(),
-            Text = "GDesk Agente",
+            Text = $"GDesk Agente {InventoryCollector.VersaoAgente}",
             Visible = true,
             ContextMenuStrip = menu,
         };
@@ -138,7 +138,7 @@ public sealed class BandejaContext : ApplicationContext
             _icone.Text = "GDesk Agente — sincronizando...";
             var cliente = new ApiClient(_config);
             var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
-            _icone.Text = "GDesk Agente";
+            _icone.Text = $"GDesk Agente {InventoryCollector.VersaoAgente}";
             // Pedido vindo do sistema: só avisa se falhar, pra não incomodar o usuário à toa.
             if (silencioso && sucesso) return;
             _icone.ShowBalloonTip(
