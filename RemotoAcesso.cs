@@ -141,6 +141,11 @@ public static class RemotoAcesso
             DefinirOpcao(exe, "key", cfg.Chave!);
             if (cfg.ConfirmarSegundos is int segundos)
                 DefinirOpcao(exe, "gdesk-confirmar-segundos", Math.Clamp(segundos, 0, 120).ToString());
+            // Técnico conectado precisa conseguir mexer no próprio GDesk Remoto
+            // da máquina: sem isto o app escurece e bloqueia a janela quando o
+            // mouse vem da sessão remota (proteção do RustDesk contra alterar
+            // configurações remotamente).
+            DefinirOpcao(exe, "allow-remote-config-modification", "Y");
 
             // PIN para desbloquear a aba Segurança do app sem admin do Windows
             // (definido por empresa no GDesk, Minha Empresa).
