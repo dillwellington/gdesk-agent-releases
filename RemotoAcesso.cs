@@ -199,6 +199,22 @@ public static class RemotoAcesso
             // a senha (senão a do usuário some) e manda senha VAZIA pro GDesk,
             // que apaga a guardada -- o Conectar abre e o app pede a senha.
             // Se o usuário limpar a senha no app, a marca sai e a rotação volta.
+            // "--option" devolve vazio também quando o serviço do app ainda não
+            // responde (logo depois de instalar/atualizar, ou serviço parado) --
+            // aí "sem marca" seria falso e a senha do usuário seria trocada.
+            // Só segue se o serviço respondeu: o servidor gravado logo acima
+            // tem que voltar igual. Senão não mexe na senha nesta rodada.
+            var servicoRespondeu = false;
+            for (var tentativa = 0; tentativa < 6 && !servicoRespondeu; tentativa++)
+            {
+                if (tentativa > 0) await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                servicoRespondeu = Executar(exe, "--option custom-rendezvous-server", TimeSpan.FromSeconds(20)).Trim() == cfg.Servidor!.Trim();
+            }
+            if (!servicoRespondeu)
+            {
+                LogLocal.Registrar("INFO", "GDesk Remoto: o serviço do app não respondeu; a senha não foi mexida nesta sincronização.");
+                return;
+            }
             var senhaManual = Executar(exe, "--option gdesk-senha-manual", TimeSpan.FromSeconds(20)).Trim() == "Y";
             if (senhaManual)
             {
