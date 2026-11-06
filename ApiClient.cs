@@ -277,6 +277,26 @@ public sealed class ApiClient
     /// minutos pelo ícone da bandeja -- qualquer falha (sem internet etc.)
     /// devolve false em silêncio, sem poluir o log.
     /// </summary>
+    /// <summary>
+    /// POST /agente/comando/solicitar: pede a sincronização COMPLETA (GDesk
+    /// Remoto, atualização do agente) para a Tarefa Agendada (SYSTEM, até 10
+    /// min). Usado pelo "Sincronizar agora" da bandeja/log, que roda como
+    /// usuário comum e não consegue fazer essa parte.
+    /// </summary>
+    public async Task<bool> SolicitarSincronizacaoCompletaAsync(string identificadorAgente)
+    {
+        try
+        {
+            using var limite = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var resposta = await _http.PostAsync($"agente/comando/solicitar?identificador_agente={Uri.EscapeDataString(identificadorAgente)}", null, limite.Token).ConfigureAwait(false);
+            return resposta.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> ConsultarPedidoSincronizacaoAsync(string identificadorAgente)
     {
         try

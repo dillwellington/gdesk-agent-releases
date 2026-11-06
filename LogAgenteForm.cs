@@ -67,7 +67,16 @@ public sealed class LogAgenteForm : Form
             _resumo.Text = "Sincronizando...";
             try
             {
-                await new ApiClient(_config).SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
+                var cliente = new ApiClient(_config);
+                var payload = InventoryCollector.ColetarComConfig(_config);
+                var (sucesso, _) = await cliente.SincronizarAsync(payload);
+                // A parte de administrador (GDesk Remoto, atualização) fica pra
+                // Tarefa Agendada -- pedida aqui, roda em até 10 min.
+                if (sucesso && !string.IsNullOrWhiteSpace(payload.IdentificadorAgente)
+                    && await cliente.SolicitarSincronizacaoCompletaAsync(payload.IdentificadorAgente))
+                {
+                    LogLocal.Registrar("INFO", "Sincronização completa (GDesk Remoto e atualização do agente) pedida -- a tarefa agendada roda em até 10 min.");
+                }
             }
             finally
             {

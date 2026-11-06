@@ -137,7 +137,15 @@ public sealed class BandejaContext : ApplicationContext
         {
             _icone.Text = "GDesk Agente — sincronizando...";
             var cliente = new ApiClient(_config);
-            var (sucesso, mensagem) = await cliente.SincronizarAsync(InventoryCollector.ColetarComConfig(_config));
+            var payload = InventoryCollector.ColetarComConfig(_config);
+            var (sucesso, mensagem) = await cliente.SincronizarAsync(payload);
+            // Manual (não silencioso): pede também a sincronização completa
+            // pra Tarefa Agendada (SYSTEM) -- GDesk Remoto e atualização.
+            if (!silencioso && sucesso && !string.IsNullOrWhiteSpace(payload.IdentificadorAgente)
+                && await cliente.SolicitarSincronizacaoCompletaAsync(payload.IdentificadorAgente))
+            {
+                LogLocal.Registrar("INFO", "Sincronização completa (GDesk Remoto e atualização do agente) pedida -- a tarefa agendada roda em até 10 min.");
+            }
             _icone.Text = $"GDesk Agente {InventoryCollector.VersaoAgente}";
             // Pedido vindo do sistema: só avisa se falhar, pra não incomodar o usuário à toa.
             if (silencioso && sucesso) return;
