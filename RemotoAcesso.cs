@@ -135,6 +135,28 @@ public static class RemotoAcesso
             if (cfg.ConfirmarSegundos is int segundos)
                 DefinirOpcao(exe, "gdesk-confirmar-segundos", Math.Clamp(segundos, 0, 120).ToString());
 
+            // Senha permanente definida À MÃO no app (Configurações > Segurança):
+            // o app marca "gdesk-senha-manual" = Y. Aí o agente NÃO troca mais
+            // a senha (senão a do usuário some) e manda senha VAZIA pro GDesk,
+            // que apaga a guardada -- o Conectar abre e o app pede a senha.
+            // Se o usuário limpar a senha no app, a marca sai e a rotação volta.
+            var senhaManual = Executar(exe, "--option gdesk-senha-manual", TimeSpan.FromSeconds(20)).Trim() == "Y";
+            if (senhaManual)
+            {
+                var idManual = ObterId(exe, appNome);
+                if (!string.IsNullOrWhiteSpace(estado.Senha))
+                {
+                    estado.Senha = null;
+                    LogLocal.Registrar("INFO", "GDesk Remoto: senha permanente definida manualmente no app; o agente não vai mais trocá-la.");
+                }
+                GravarEstado(estado);
+                if (string.IsNullOrWhiteSpace(idManual)) return;
+                payload.RemotoId = idManual;
+                payload.RemotoSenha = "";
+                payload.RemotoVersao = versaoInstalada;
+                return;
+            }
+
             // Senha NOVA a cada sincronização completa (a cada 6h ou quando o
             // GDesk pede): uma senha que alguém tenha anotado perde a validade
             // logo. Sessões já abertas não caem com a troca. Se a troca falhar,

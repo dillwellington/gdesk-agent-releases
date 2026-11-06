@@ -18,7 +18,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>GDeskAgent</AssemblyName>
     <!-- Versão exibida em Propriedades > Detalhes do .exe. Fonte ÚNICA da versão: InventoryCollector.VersaoAgente lê daqui, e o GitHub Actions (.github/workflows/publicar-agente.yml) publica uma release nova sempre que este número muda. -->
-    <Version>1.10.5</Version>
+    <Version>1.10.6</Version>
     <RootNamespace>GDeskAgent</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Necessário para a telinha de login (LoginForm.cs) exibida pela
