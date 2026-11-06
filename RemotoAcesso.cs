@@ -25,6 +25,11 @@ public sealed class ConfigRemoto
     // Segundos para o usuário da máquina aceitar/recusar o acesso antes de
     // conectar sozinho (0 = conecta direto). Configurado por empresa no GDesk.
     [JsonPropertyName("confirmar_segundos")] public int? ConfirmarSegundos { get; set; }
+    // PIN para desbloquear a aba Segurança do app ("" = sem PIN). null =
+    // backend antigo, não mexe.
+    [JsonPropertyName("pin_desbloqueio")] public string? PinDesbloqueio { get; set; }
+    // Senha permanente definida pelo GDesk para esta máquina (null = não tem).
+    [JsonPropertyName("senha_fixa")] public string? SenhaFixa { get; set; }
 }
 
 /// <summary>
@@ -60,6 +65,8 @@ public static class RemotoAcesso
         // GDesk Remoto pode sair com a MESMA versão (1.5.1) -- é o hash
         // diferente no remoto.json que dispara a atualização.
         public string? InstaladorSha256 { get; set; }
+        // Último PIN de desbloqueio aplicado (o app não deixa ler o atual).
+        public string? PinDesbloqueio { get; set; }
     }
 
     /// <summary>Versão síncrona pra SelfInstaller.SincronizarAgora (já roda sync-over-async lá).</summary>
@@ -72,7 +79,7 @@ public static class RemotoAcesso
         {
             if (!EhAdministrador()) return;
 
-            var cfg = await new ApiClient(config).ObterConfigRemotoAsync().ConfigureAwait(false);
+            var cfg = await new ApiClient(config).ObterConfigRemotoAsync(payload.IdentificadorAgente).ConfigureAwait(false);
             if (cfg == null || !cfg.Habilitado || string.IsNullOrWhiteSpace(cfg.Servidor) || string.IsNullOrWhiteSpace(cfg.Chave))
             {
                 return;
@@ -134,6 +141,53 @@ public static class RemotoAcesso
             DefinirOpcao(exe, "key", cfg.Chave!);
             if (cfg.ConfirmarSegundos is int segundos)
                 DefinirOpcao(exe, "gdesk-confirmar-segundos", Math.Clamp(segundos, 0, 120).ToString());
+
+            // PIN para desbloquear a aba Segurança do app sem admin do Windows
+            // (definido por empresa no GDesk, Minha Empresa).
+            if (cfg.PinDesbloqueio != null && cfg.PinDesbloqueio != (estado.PinDesbloqueio ?? ""))
+            {
+                var pin = cfg.PinDesbloqueio.Trim();
+                var saidaPin = Executar(exe, $"--set-unlock-pin \"{pin}\"", TimeSpan.FromSeconds(30));
+                if (saidaPin.Contains("Done", StringComparison.OrdinalIgnoreCase))
+                {
+                    estado.PinDesbloqueio = pin;
+                    GravarEstado(estado);
+                }
+                else
+                {
+                    LogLocal.Registrar("ERRO", $"GDesk Remoto: não consegui gravar o PIN de desbloqueio ({saidaPin.Trim()}).");
+                }
+            }
+
+            // Senha permanente definida PELO GDESK para esta máquina: ganha de
+            // tudo. Aplica se mudou ou se alguém trocou no app (marca manual),
+            // e limpa a marca manual.
+            if (!string.IsNullOrEmpty(cfg.SenhaFixa))
+            {
+                var senhaFixa = cfg.SenhaFixa;
+                var trocadaNoApp = Executar(exe, "--option gdesk-senha-manual", TimeSpan.FromSeconds(20)).Trim() == "Y";
+                if (estado.Senha != senhaFixa || trocadaNoApp)
+                {
+                    var saidaFixa = Executar(exe, $"--password {senhaFixa}", TimeSpan.FromSeconds(30));
+                    if (saidaFixa.Contains("Done", StringComparison.OrdinalIgnoreCase))
+                    {
+                        estado.Senha = senhaFixa;
+                        if (trocadaNoApp) DefinirOpcao(exe, "gdesk-senha-manual", "");
+                        LogLocal.Registrar("INFO", "GDesk Remoto: senha permanente definida pelo GDesk aplicada.");
+                    }
+                    else
+                    {
+                        LogLocal.Registrar("ERRO", $"GDesk Remoto: não consegui aplicar a senha definida pelo GDesk ({saidaFixa.Trim()}).");
+                    }
+                }
+                GravarEstado(estado);
+                var idFixa = ObterId(exe, appNome);
+                if (string.IsNullOrWhiteSpace(idFixa) || estado.Senha != senhaFixa) return;
+                payload.RemotoId = idFixa;
+                payload.RemotoSenha = senhaFixa;
+                payload.RemotoVersao = versaoInstalada;
+                return;
+            }
 
             // Senha permanente definida À MÃO no app (Configurações > Segurança):
             // o app marca "gdesk-senha-manual" = Y. Aí o agente NÃO troca mais

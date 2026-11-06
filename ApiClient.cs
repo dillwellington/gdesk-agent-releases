@@ -173,11 +173,16 @@ public sealed class ApiClient
     }
 
     /// <summary>GET /agente/remoto/config: servidor/chave/instalador do GDesk Remoto. Falha = null (não mexe em nada).</summary>
-    public async Task<ConfigRemoto?> ObterConfigRemotoAsync()
+    public async Task<ConfigRemoto?> ObterConfigRemotoAsync(string? identificador = null)
     {
         try
         {
-            var resposta = await _http.GetAsync("agente/remoto/config").ConfigureAwait(false);
+            // identificador: o backend devolve a senha permanente definida
+            // pelo GDesk para ESTA máquina (senha_fixa), se houver.
+            var url = string.IsNullOrWhiteSpace(identificador)
+                ? "agente/remoto/config"
+                : $"agente/remoto/config?identificador={Uri.EscapeDataString(identificador)}";
+            var resposta = await _http.GetAsync(url).ConfigureAwait(false);
             if (!resposta.IsSuccessStatusCode) return null;
             return await resposta.Content.ReadFromJsonAsync<ConfigRemoto>().ConfigureAwait(false);
         }
