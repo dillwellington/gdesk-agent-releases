@@ -30,7 +30,10 @@ try {
     if ($Patrimonio){ $args += @("--patrimonio", $Patrimonio) }
     if ($Lacre)     { $args += @("--numero-lacre", $Lacre) }
 
-    $p = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
+    # Sem -Wait: ele espera também o ícone da bandeja (--bandeja) que o instalador deixa aberto.
+    $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
+    $null = $p.Handle
+    $p.WaitForExit()
     if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 }
 finally {

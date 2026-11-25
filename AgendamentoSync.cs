@@ -46,6 +46,9 @@ public static class AgendamentoSync
             var gravada = File.Exists(CaminhoVersaoTarefa) ? File.ReadAllText(CaminhoVersaoTarefa).Trim() : "";
             if (gravada == InventoryCollector.VersaoAgente) return;
             SelfInstaller.RegistrarTarefaAgendada(apagarAntes: false);
+            // 1.10.11+: regrava também a da bandeja (grupo Usuários, sem
+            // parar na bateria, sem limite de 72h -- ver RegistrarTarefaBandeja).
+            SelfInstaller.RegistrarTarefaBandeja();
             File.WriteAllText(CaminhoVersaoTarefa, InventoryCollector.VersaoAgente);
             LogLocal.Registrar("INFO", "Tarefa agendada atualizada (verificação a cada 10 min).");
         }
@@ -73,10 +76,8 @@ public static class AgendamentoSync
                 .Where(id => id > 0)
                 .ToHashSet();
             if (sessoesComUsuario.Count == 0) return;
-            var sessoesComBandeja = System.Diagnostics.Process.GetProcessesByName("GDeskAgent")
-                .Select(p => { try { return p.SessionId; } catch { return 0; } })
-                .Where(id => id > 0)
-                .ToHashSet();
+            // 1.10.11+: só conta processo "--bandeja" (o Painel aberto não é o ícone).
+            var sessoesComBandeja = BandejaSessao.SessoesComBandeja();
             if (sessoesComUsuario.All(sessoesComBandeja.Contains)) return;
 
             // No máximo 1 tentativa por hora (ex.: máquina com outro usuário

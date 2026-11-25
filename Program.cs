@@ -141,6 +141,12 @@ if (args.Contains("--bandeja"))
         return 1;
     }
 
+    // 1.10.11+: um ícone só por sessão -- a bandeja agora pode ser aberta
+    // pela tarefa (login/reabertura) e pelo Painel; sem isso daria ícone
+    // duplicado.
+    using var unicaNaSessao = new Mutex(true, BandejaSessao.NomeMutex, out var primeiraNaSessao);
+    if (!primeiraNaSessao) return 0;
+
     var configBandeja = AgentConfig.Carregar();
     ApplicationConfiguration.Initialize();
     Application.Run(new BandejaContext(configBandeja));
@@ -178,6 +184,10 @@ if (args.Contains("--painel"))
             MessageBoxIcon.Warning);
         return 1;
     }
+
+    // 1.10.11+: Painel aberto pelo Menu Iniciar garante o ícone na bandeja,
+    // então fechar o Painel equivale a "minimizar para a bandeja".
+    BandejaSessao.GarantirNaSessaoAtual();
 
     var configPainel = AgentConfig.Carregar();
     ApplicationConfiguration.Initialize();

@@ -255,14 +255,65 @@ public static class SelfInstaller
         // o /Create com /F sobrescreve do mesmo jeito.
         if (apagarAntes) ExecutarComando("schtasks.exe", $"/Delete /TN \"{NomeTarefaAgendada}\" /F");
 
-        var horaAtual = DateTime.Now.ToString("HH:mm");
-        var argumentos =
-            $"/Create /TN \"{NomeTarefaAgendada}\" /TR \"\\\"{Instalacao.CaminhoExe}\\\"\" " +
-            $"/SC MINUTE /MO 10 /ST {horaAtual} /RU SYSTEM /RL HIGHEST /F";
         // 10 min (não mais 6h): a execução quase sempre só pergunta "tem
         // pedido?" e sai -- a sincronização completa continua a cada 6h ou
         // quando o GDesk pede (ver AgendamentoSync.cs).
-        ExecutarComando("schtasks.exe", argumentos);
+        // 1.10.11+: criada por XML (não mais por /SC MINUTE) pra desligar os
+        // padrões do schtasks que não servem pra notebook: "só iniciar na
+        // tomada" e "parar se passar pra bateria". Conta SYSTEM pelo SID
+        // (S-1-5-18), independente do idioma do Windows.
+        var inicio = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+        var xml = $"""
+            <?xml version="1.0" encoding="UTF-16"?>
+            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <RegistrationInfo><Description>GDesk Agente: inventário e atualização (verifica a cada 10 min).</Description></RegistrationInfo>
+              <Triggers>
+                <TimeTrigger>
+                  <StartBoundary>{inicio}</StartBoundary>
+                  <Repetition><Interval>PT10M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+                  <Enabled>true</Enabled>
+                </TimeTrigger>
+              </Triggers>
+              <Principals>
+                <Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal>
+              </Principals>
+              <Settings>
+                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <StartWhenAvailable>true</StartWhenAvailable>
+                <AllowStartOnDemand>true</AllowStartOnDemand>
+                <Enabled>true</Enabled>
+                <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+                <Priority>7</Priority>
+              </Settings>
+              <Actions Context="Author">
+                <Exec><Command>{System.Security.SecurityElement.Escape(Instalacao.CaminhoExe)}</Command></Exec>
+              </Actions>
+            </Task>
+            """;
+        CriarTarefaPorXml(NomeTarefaAgendada, xml);
+    }
+
+    /// <summary>
+    /// 1.10.11+: grava a definição da tarefa num .xml temporário (UTF-16, o
+    /// que o schtasks espera) e registra com "schtasks /Create /XML" -- único
+    /// jeito de controlar bateria, limite de tempo e grupo de usuários sem
+    /// depender do módulo ScheduledTasks do PowerShell.
+    /// </summary>
+    private static void CriarTarefaPorXml(string nome, string xml)
+    {
+        var arquivo = Path.Combine(Path.GetTempPath(), $"gdesk-tarefa-{Guid.NewGuid():N}.xml");
+        try
+        {
+            File.WriteAllText(arquivo, xml, System.Text.Encoding.Unicode);
+            var codigo = ExecutarComando("schtasks.exe", $"/Create /TN \"{nome}\" /XML \"{arquivo}\" /F");
+            if (codigo != 0) LogLocal.Registrar("ERRO", $"schtasks não criou a tarefa \"{nome}\" (código {codigo}).");
+        }
+        finally
+        {
+            try { File.Delete(arquivo); } catch { /* temporário */ }
+        }
     }
 
     /// <summary>
@@ -272,15 +323,50 @@ public static class SelfInstaller
     /// tela), ao contrário da Tarefa de sincronização. "/RL LIMITED" evita
     /// que o Windows peça elevação toda vez que a tarefa disparar --
     /// mostrar um ícone na bandeja não precisa de privilégio nenhum.
+    ///
+    /// 1.10.11+: criada por XML, corrigindo três problemas do "/SC ONLOGON"
+    /// sem /RU:
+    ///   - a tarefa ficava presa à conta de QUEM INSTALOU -- instalação via
+    ///     GPO/script (SYSTEM) abria o ícone numa sessão invisível, e numa
+    ///     máquina com vários usuários só o instalador via o ícone. Agora o
+    ///     principal é o grupo Usuários (SID S-1-5-32-545, vale em Windows
+    ///     de qualquer idioma) e roda na sessão de quem fizer login;
+    ///   - em notebook o Agendador matava o ícone ao tirar da tomada e não
+    ///     abria na bateria (padrões "só na tomada"/"parar na bateria");
+    ///   - limite padrão de 72h matava o ícone em máquina que não desliga.
+    /// "Parallel": um ícone por usuário logado (o mutex em Program.cs
+    /// impede dois na mesma sessão).
     /// </summary>
-    private static void RegistrarTarefaBandeja()
+    internal static void RegistrarTarefaBandeja()
     {
-        ExecutarComando("schtasks.exe", $"/Delete /TN \"{NomeTarefaBandeja}\" /F");
-
-        var argumentos =
-            $"/Create /TN \"{NomeTarefaBandeja}\" /TR \"\\\"{Instalacao.CaminhoExe}\\\" --bandeja\" " +
-            $"/SC ONLOGON /RL LIMITED /F";
-        ExecutarComando("schtasks.exe", argumentos);
+        var xml = $"""
+            <?xml version="1.0" encoding="UTF-16"?>
+            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <RegistrationInfo><Description>GDesk Agente: ícone na bandeja (perto do relógio) de cada usuário que entrar no Windows.</Description></RegistrationInfo>
+              <Triggers>
+                <LogonTrigger><Enabled>true</Enabled></LogonTrigger>
+              </Triggers>
+              <Principals>
+                <Principal id="Author"><GroupId>S-1-5-32-545</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal>
+              </Principals>
+              <Settings>
+                <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <AllowStartOnDemand>true</AllowStartOnDemand>
+                <Enabled>true</Enabled>
+                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                <Priority>7</Priority>
+              </Settings>
+              <Actions Context="Author">
+                <Exec>
+                  <Command>{System.Security.SecurityElement.Escape(Instalacao.CaminhoExe)}</Command>
+                  <Arguments>--bandeja</Arguments>
+                </Exec>
+              </Actions>
+            </Task>
+            """;
+        CriarTarefaPorXml(NomeTarefaBandeja, xml);
     }
 
     /// <summary>
@@ -407,14 +493,16 @@ public static class SelfInstaller
         }
     }
 
-    private static void ExecutarComando(string arquivo, string argumentos)
+    private static int ExecutarComando(string arquivo, string argumentos)
     {
         using var processo = Process.Start(new ProcessStartInfo(arquivo, argumentos)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
         });
-        processo?.WaitForExit();
+        if (processo == null) return -1;
+        processo.WaitForExit();
+        return processo.ExitCode;
     }
 
     /// <summary>

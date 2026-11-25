@@ -30,7 +30,7 @@ public sealed class PainelForm : Form
     private readonly Button _botaoAlterar = new() { Text = "Alterar cadastro (requer login)" };
     private readonly Button _botaoLog = new() { Text = "Ver log de sincronização" };
     private readonly Button _botaoAbrirChamado = new() { Text = "Abrir chamado" };
-    private readonly Button _botaoFechar = new() { Text = "Fechar" };
+    private readonly Button _botaoFechar = new() { Text = "Minimizar para a bandeja" };
 
     public PainelForm(AgentConfig config)
     {
