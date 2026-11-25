@@ -156,6 +156,7 @@ public static class Atualizador
 
             // Reinicia o agente (sincroniza já com a versão nova) e a bandeja.
             LogLocal.Registrar("OK", "Agente atualizado com sucesso. Reiniciando.");
+            AgendamentoSync.InvalidarUltimaCompleta();
             try { Schtasks($"/Run /TN \"{TarefaSincronizacao}\""); } catch { }
             try { Schtasks("/Run /TN \"GDesk Agente - Bandeja\""); } catch { /* a bandeja volta no próximo login */ }
             return 0;

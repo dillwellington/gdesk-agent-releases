@@ -127,6 +127,20 @@ public static class AgendamentoSync
         }
     }
 
+    /// <summary>
+    /// 1.10.12+: chamado pelo .exe novo logo depois de aplicar uma
+    /// atualização -- apaga o carimbo da última sincronização completa pra
+    /// que a execução seguinte da tarefa (disparada pelo Atualizador) envie o
+    /// inventário já com a versão nova. Sem isso o painel ficava mostrando a
+    /// versão antiga por até 6h (a sync que baixou a atualização acabou de
+    /// gravar o carimbo, então a próxima execução só consultava pedido e saía).
+    /// </summary>
+    public static void InvalidarUltimaCompleta()
+    {
+        try { if (File.Exists(CaminhoUltimaCompleta)) File.Delete(CaminhoUltimaCompleta); }
+        catch { /* melhor esforço */ }
+    }
+
     public static void RegistrarCompleta()
     {
         try { File.WriteAllText(CaminhoUltimaCompleta, DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)); }
